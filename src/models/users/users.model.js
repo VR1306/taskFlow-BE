@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
 
 const userSchema = new mongoose.Schema({
     firstName:{
@@ -23,25 +24,38 @@ const userSchema = new mongoose.Schema({
     },
     role:{
         type:String,
-        enum:['Admin','User'],
+        enum:['SuperAdmin','Admin','User'],
         default:'User'
     },
     profilePic:{
         type:String,
     },
-    signIn:{
-        type:mongoose.Schema.Types.ObjectId,
-        ref:'SignIn'
-    }
-}, {timestamps:true})
+    passwordResetToken: { type: String },
+    passwordResetExpires: { type: Date }
+}, {timestamps:true,
+    collection:'users'})
 
-userSchema.pre('save', async function (next) {
+// Prevent SuperAdmin deletion (Query middleware)
+userSchema.pre(['deleteOne', 'findOneAndDelete', 'deleteMany'], async function () {
+  const docToDelete = await this.model.findOne(this.getQuery());
+  if (docToDelete && (docToDelete.role === 'SuperAdmin' || docToDelete.email === 'vijayaraghavan130699@gmail.com')) {
+    throw new Error('Deletion prohibited: SuperAdmin account cannot be deleted.');
+  }
+});
+
+// Prevent SuperAdmin deletion (Document middleware: doc.deleteOne())
+userSchema.pre('deleteOne', { document: true, query: false }, function () {
+  if (this.role === 'SuperAdmin' || this.email === 'vijayaraghavan130699@gmail.com') {
+    throw new Error('Deletion prohibited: SuperAdmin account cannot be deleted.');
+  }
+});
+
+userSchema.pre('save', async function () {
   // Only hash the password if it has been modified or is new
-  if (!this.isModified('password')) return next();
+  if (!this.isModified('password')) return;
   
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
-  next();
 });
 
 // Helper Method: Compare entered password with hashed password in database
@@ -49,6 +63,6 @@ userSchema.methods.comparePassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-const GetAllUsers = mongoose.model('GetAllUsers',userSchema);
+const GetAllUsers = mongoose.models.GetAllUsers || mongoose.model('GetAllUsers', userSchema);
 
 export default GetAllUsers;

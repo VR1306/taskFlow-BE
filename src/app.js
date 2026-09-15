@@ -9,7 +9,7 @@ app.use(cors());
 app.use(express.json()); // Parses incoming JSON payloads
 
 // Parent Route
-app.use('/api/v1', apiRoutes);
+app.use('/api', apiRoutes);
 
 // Base Route Verification
 app.get('/', (req, res) => {
