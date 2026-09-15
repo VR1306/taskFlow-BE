@@ -19,16 +19,16 @@ const swaggerOptions = {
     },
     servers: [
       {
+        url: 'https://task-flow-be-eight.vercel.app',
+        description: 'Production Server (Vercel)',
+      },
+      {
         url: 'http://localhost:5001',
         description: 'Local Development Server (Port 5001)',
       },
       {
         url: 'http://localhost:5000',
         description: 'Local Development Server (Port 5000)',
-      },
-      {
-        url: 'https://task-flow-be-eight.vercel.app',
-        description: 'Production Server (Vercel)',
       },
     ],
     components: {
