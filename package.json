@@ -29,7 +29,9 @@
     "express": "^5.2.1",
     "joi": "^18.2.9",
     "jsonwebtoken": "^9.0.3",
-    "mongoose": "^9.10.0"
+    "mongoose": "^9.10.0",
+    "swagger-jsdoc": "^6.3.0",
+    "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
     "nodemailer": "^10.0.3",
