@@ -6,11 +6,19 @@ import connectDb from './config/database.js';
 import swaggerDocs from './config/swagger.js';
 import apiRoutes from './routes/api.routes.js';
 
-
 const app = express();
+app.disable('x-powered-by');
+
+// CORS configuration
+const corsOptions = {
+  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
 
 // Global Middlewares
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json()); // Parses incoming JSON payloads
 
 // Swagger Raw JSON Route (useful for Postman imports)
@@ -64,8 +72,6 @@ app.get(['/api-docs', '/docs'], (req, res) => {
   res.send(swaggerHtml);
 });
 
-
-
 // Helper to get readable DB status
 const getDatabaseStatus = () => {
   const states = {
@@ -107,6 +113,7 @@ app.get('/health', async (req, res) => {
       dbStatus = getDatabaseStatus();
     } catch (err) {
       dbStatus = 'disconnected';
+      console.warn(`Health check database reconnection failed: ${err?.message || 'unknown error'}`);
     }
   }
 
@@ -139,9 +146,9 @@ app.get('/health', async (req, res) => {
  */
 app.get('/', (req, res) => {
   res.status(200).json({
-    message: "Welcome to the Base Node.js API!",
-    healthCheck: "/health",
-    apiDocumentation: "/api-docs"
+    message: 'Welcome to the Base Node.js API!',
+    healthCheck: '/health',
+    apiDocumentation: '/api-docs',
   });
 });
 
@@ -155,7 +162,7 @@ app.use('/api', async (req, res, next) => {
     return res.status(500).json({
       success: false,
       message: 'Internal Database Server Error',
-      error: error.message
+      error: error.message,
     });
   }
 });

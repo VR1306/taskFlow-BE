@@ -12,14 +12,19 @@ export const validateUserToken = async (req, res, next) => {
       const authHeader = req.headers.authorization.trim();
       if (authHeader.startsWith('Bearer')) {
         // Extract everything after the last 'Bearer ' word and strip quotes/whitespace
-        token = authHeader.replace(/^Bearer\s+/i, '').replace(/^Bearer\s+/i, '').replace(/^["']|["']$/g, '').trim();
+        token = authHeader
+          .replace(/^Bearer\s+/i, '')
+          .replace(/^["']|["']$/g, '')
+          .trim();
       } else {
         token = authHeader.replace(/^["']|["']$/g, '').trim();
       }
     }
 
     if (!token) {
-      return res.status(401).json({ success: false, message: 'You are not logged in. Please log in to get access.' });
+      return res
+        .status(401)
+        .json({ success: false, message: 'You are not logged in. Please log in to get access.' });
     }
 
     // Verify the token
@@ -28,13 +33,17 @@ export const validateUserToken = async (req, res, next) => {
     // Check if the user still exists in the database
     const currentUser = await GetAllUsers.findById(decoded.id);
     if (!currentUser) {
-      return res.status(401).json({ success: false, message: 'The user belonging to this token no longer exists.' });
+      return res
+        .status(401)
+        .json({ success: false, message: 'The user belonging to this token no longer exists.' });
     }
 
     // Grant access to the protected route by attaching the user object to the request
     req.user = currentUser;
     next();
   } catch (error) {
-    return res.status(401).json({ success: false, message: 'Invalid token. Access denied.', error: error.message });
+    return res
+      .status(401)
+      .json({ success: false, message: 'Invalid token. Access denied.', error: error.message });
   }
 };

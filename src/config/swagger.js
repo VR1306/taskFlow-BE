@@ -1,6 +1,6 @@
 import swaggerJsDoc from 'swagger-jsdoc';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,10 +42,7 @@ const swaggerOptions = {
       },
     },
   },
-  apis: [
-    path.join(__dirname, '../app.js'),
-    path.join(__dirname, '../routes/**/*.js'),
-  ],
+  apis: [path.join(__dirname, '../app.js'), path.join(__dirname, '../routes/**/*.js')],
 };
 
 const swaggerDocs = swaggerJsDoc(swaggerOptions);

@@ -19,11 +19,10 @@ export const generateToken = (user) => {
 export const verifyToken = (token) => {
   try {
     return jwt.verify(token, process.env.JWT_SECRET);
-  } catch (error) {
+  } catch (_error) {
     return null;
   }
 };
-
 
 export const catchAsync = (fn) => {
   return (req, res, next) => {
@@ -32,7 +31,7 @@ export const catchAsync = (fn) => {
       return res.status(500).json({
         success: false,
         message: 'Internal Database Server Error',
-        error: err.message
+        error: err.message,
       });
     });
   };

@@ -1,15 +1,22 @@
 import nodemailer from 'nodemailer';
 
-export const sendWelcomeEmail = async(options)=>{
-    const transport = nodemailer.createTransport({
-        service:'gmail',
-        auth:{
-            user:process.env.GMAIL_USER,
-            pass:process.env.GMAIL_APP_PASS
-        }
-    })
+// Singleton Secure Transporter (Explicit SSL/TLS encryption for SonarQube / SMTP compliance)
+const transporter = nodemailer.createTransport({
+  host: 'smtp.gmail.com',
+  port: 465,
+  secure: true, // Uses SSL/TLS
+  auth: {
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_APP_PASS,
+  },
+  tls: {
+    rejectUnauthorized: true,
+    minVersion: 'TLSv1.2',
+  },
+});
 
-   const htmlMessage = `
+export const sendWelcomeEmail = async (options) => {
+  const htmlMessage = `
     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
       <h2 style="color: #4A90E2; text-align: center;">Welcome to TaskFlow!</h2>
       <p>Hello <strong>${options.name}</strong>,</p>
@@ -26,29 +33,19 @@ export const sendWelcomeEmail = async(options)=>{
   `;
 
   try {
-    await transport.sendMail({
-        from:`Taskflow <${process.env.GMAIL_USER}>`,
-        to:options.email,
-        subject:'Welcome to TaskFlow - Your Account Credentials',
-        html:htmlMessage
-    })
+    await transporter.sendMail({
+      from: `Taskflow <${process.env.GMAIL_USER}>`,
+      to: options.email,
+      subject: 'Welcome to TaskFlow - Your Account Credentials',
+      html: htmlMessage,
+    });
   } catch (error) {
-    console.error('Error in sending Welcome Mail:',error);
-    throw new Error("Failed to send welcome email.");
+    console.error('Error in sending Welcome Mail:', error);
+    throw new Error('Failed to send welcome email.', { cause: error });
   }
-}
-
-
+};
 
 export const sendPasswordResetEmail = async (options) => {
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.GMAIL_USER,
-      pass: process.env.GMAIL_APP_PASS,
-    },
-  });
-
   const htmlMessage = `
     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
       <h2 style="color: #D32F2F; text-align: center;">Password Reset Request</h2>

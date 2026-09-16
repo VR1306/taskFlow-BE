@@ -10,11 +10,15 @@ export const createUserValidationSchema = Joi.object({
     'string.empty': 'Last name is required',
     'any.required': 'Last name is required',
   }),
-  email: Joi.string().trim().email({ tlds: { allow: false } }).required().messages({
-    'string.empty': 'Email is required',
-    'string.email': 'Please enter a valid email address',
-    'any.required': 'Email is required',
-  }),
+  email: Joi.string()
+    .trim()
+    .email({ tlds: { allow: false } })
+    .required()
+    .messages({
+      'string.empty': 'Email is required',
+      'string.email': 'Please enter a valid email address',
+      'any.required': 'Email is required',
+    }),
   role: Joi.string().valid('User', 'Admin', 'SuperAdmin').default('User').messages({
     'any.only': 'Role must be either User, Admin, or SuperAdmin',
   }),

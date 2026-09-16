@@ -24,8 +24,10 @@ const connectDb = async () => {
     };
 
     cached.promise = mongoose.connect(mongoUri, opts).then(async (mongooseInstance) => {
-      console.log(`MongoDB Connected: ${mongooseInstance.connection.host} | Database: ${mongooseInstance.connection.name}`);
-      
+      console.log(
+        `MongoDB Connected: ${mongooseInstance.connection.host} | Database: ${mongooseInstance.connection.name}`
+      );
+
       // Auto-seed SuperAdmin on startup if not already created
       try {
         await seedSuperAdmin();

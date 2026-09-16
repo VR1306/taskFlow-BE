@@ -1,87 +1,86 @@
-import { catchAsync } from "../../helpers/helpers.js";
-import { sendWelcomeEmail } from "../../helpers/sendEmail.js";
-import GetAllUsers from "../../models/users/users.model.js";
-import crypto from 'crypto';
-export const getAllUsers = catchAsync(async (req, res, next) => {
-  // 1. Parse pagination values from req.query (with default fallbacks)
-  // Converting strings to numbers using radix 10
-  const page = parseInt(req.query.page, 10) || 1;
-  const limit = parseInt(req.query.limit, 10) || 10;
-  
-  // Calculate how many documents the database needs to skip over
+import { catchAsync } from '../../helpers/helpers.js';
+import { sendWelcomeEmail } from '../../helpers/sendEmail.js';
+import GetAllUsers from '../../models/users/users.model.js';
+import crypto from 'node:crypto';
+
+export const getAllUsers = catchAsync(async (req, res) => {
+  // 1. Parse pagination values using Number.parseInt with bounds checking
+  const page = Math.max(1, Number.parseInt(String(req.query.page), 10) || 1);
+  const limit = Math.max(1, Math.min(100, Number.parseInt(String(req.query.limit), 10) || 10));
+
+  // Calculate skip offset
   const skip = (page - 1) * limit;
 
-  // 2. Run database queries in parallel to save processing time
+  // 2. Run database queries in parallel for efficiency
   const [users, totalUsers] = await Promise.all([
-    GetAllUsers.find().select('-password').skip(skip).limit(limit),
-    GetAllUsers.countDocuments() // Get the absolute total number of users in the system
+    GetAllUsers.find().select('-password').skip(skip).limit(limit).lean(),
+    GetAllUsers.countDocuments(),
   ]);
 
   // 3. Calculate total structural pages available
   const totalPages = Math.ceil(totalUsers / limit);
 
-  // 4. Construct response with comprehensive pagination data
+  // 4. Return formatted pagination response
   return res.status(200).json({
     success: true,
     pagination: {
       totalItems: totalUsers,
-      totalPages: totalPages,
+      totalPages,
       currentPage: page,
-      limit: limit,
+      limit,
       hasNextPage: page < totalPages,
-      hasPrevPage: page > 1
+      hasPrevPage: page > 1,
     },
-    data: users
+    data: users,
   });
 });
 
-
-export const createUserApiCall = catchAsync(async (req, res, next) => {
+export const createUserApiCall = catchAsync(async (req, res) => {
   // 1. Parse values from request body
   const { firstName, lastName, email, role } = req.body;
 
   // 2. Check if user already exists
-  const userExists = await GetAllUsers.findOne({ email });
+  const userExists = await GetAllUsers.findOne({ email }).lean();
   if (userExists) {
     return res.status(400).json({
       success: false,
-      message: 'Email already exists. Please use a different email.'
+      message: 'Email already exists. Please use a different email.',
     });
   }
 
-  // Generate a temporary 8-character random password automatically
-  const temporaryPassword = crypto.randomBytes(4).toString('hex');
+  // 3. Generate a secure temporary 16-character random password
+  const temporaryPassword = crypto.randomBytes(8).toString('hex');
 
-  // 3. Create the new user record (Includes generated password)
+  // 4. Create the new user record (Password automatically hashed in Mongoose pre-save)
   const user = await GetAllUsers.create({
     firstName,
     lastName,
     email,
     role,
-    password: temporaryPassword // This gets automatically hashed by your Mongoose pre-save hook!
+    password: temporaryPassword,
   });
 
-  // 4. Send the welcome email in the background
+  // 5. Send the welcome email in the background
   try {
     await sendWelcomeEmail({
       name: `${user.firstName} ${user.lastName}`,
       email: user.email,
-      plainPassword: temporaryPassword // Send the plain text version so they can read it
+      plainPassword: temporaryPassword,
     });
   } catch (emailError) {
-    console.error(`🚨 Email delivery failed for ${email}:`, emailError.message);
+    console.error(`Email delivery failed for ${email}:`, emailError);
   }
 
-  // 5. Respond with the newly created user details
+  // 6. Respond with the created user details
   return res.status(201).json({
     success: true,
     message: 'User created successfully and credential email sent!',
-    user: { 
-      id: user._id, 
-      firstName: user.firstName, 
-      lastName: user.lastName, 
+    user: {
+      id: user._id.toString(),
+      firstName: user.firstName,
+      lastName: user.lastName,
       email: user.email,
-      role: user.role 
-    }
+      role: user.role,
+    },
   });
 });

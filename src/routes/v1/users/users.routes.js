@@ -131,7 +131,11 @@ router.get('/getAllUsers', validateUserToken, getAllUsers);
  *       401:
  *         description: Unauthorized - missing or invalid token
  */
-router.post('/createUser', validateUserToken, validateRequest(createUserValidationSchema), createUserApiCall);
+router.post(
+  '/createUser',
+  validateUserToken,
+  validateRequest(createUserValidationSchema),
+  createUserApiCall
+);
 
 export default router;
-

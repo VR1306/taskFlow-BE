@@ -26,10 +26,8 @@ export const validateRequest = (schema) => {
       try {
         const doc = new schema(req.body);
         const validationError = doc.validateSync();
-        if (validationError && validationError.errors) {
-          const errorMessages = Object.values(validationError.errors).map(
-            (err) => err.message
-          );
+        if (validationError?.errors) {
+          const errorMessages = Object.values(validationError.errors).map((err) => err.message);
           return res.status(400).json({
             success: false,
             errors: errorMessages,
