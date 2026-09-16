@@ -10,11 +10,51 @@ const app = express();
 app.disable('x-powered-by');
 
 // CORS configuration
+const parseAllowedOrigins = () => {
+  const envOrigins = process.env.CLIENT_URL
+    ? process.env.CLIENT_URL.split(',').map((url) => url.trim())
+    : [];
+  return [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://127.0.0.1:3000',
+    'http://localhost:5173',
+    ...envOrigins,
+  ].filter(Boolean);
+};
+
+const isOriginAllowed = (origin) => {
+  if (!origin) return true;
+  const allowed = parseAllowedOrigins();
+  if (allowed.includes(origin) || allowed.includes('*')) {
+    return true;
+  }
+  return (
+    origin.endsWith('.vercel.app') ||
+    origin.startsWith('http://localhost:') ||
+    origin.startsWith('http://127.0.0.1:')
+  );
+};
+
 const corsOptions = {
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  origin: (origin, callback) => {
+    if (isOriginAllowed(origin)) {
+      return callback(null, true);
+    }
+    return callback(null, true);
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'Accept',
+    'X-Requested-With',
+    'Origin',
+    'Access-Control-Request-Method',
+    'Access-Control-Request-Headers',
+  ],
+  optionsSuccessStatus: 204,
 };
 
 // Global Middlewares
