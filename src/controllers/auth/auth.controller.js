@@ -63,8 +63,13 @@ export const forgotPasswordEmailVerification = catchAsync(async (req, res) => {
   await user.save({ validateBeforeSave: false });
 
   // 4. Construct the reset URL pointing to frontend recovery page
-  const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
-  const resetUrl = `${clientUrl}/auth/reset-password?token=${rawResetToken}`;
+  const clientUrlEnv =
+    process.env.RESET_PASSWORD_CLIENT_URL ||
+    process.env.CLIENT_URL ||
+    'https://taskflow-fe-beryl.vercel.app';
+  const rawClientUrl = clientUrlEnv.split(',')[0].trim() || 'https://taskflow-fe-beryl.vercel.app';
+  const cleanClientUrl = rawClientUrl.endsWith('/') ? rawClientUrl.slice(0, -1) : rawClientUrl;
+  const resetUrl = `${cleanClientUrl}/auth/reset-password?token=${rawResetToken}`;
 
   // 5. Fire off the reset email asynchronously
   try {
