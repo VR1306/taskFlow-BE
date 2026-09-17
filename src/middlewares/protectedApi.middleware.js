@@ -1,25 +1,11 @@
-// src/middlewares/auth.middleware.js
 import jwt from 'jsonwebtoken';
 import GetAllUsers from '../models/users/users.model.js';
+import { extractBearerToken } from '../helpers/helpers.js';
 
 // 1. Check if the user is logged in via JWT
 export const validateUserToken = async (req, res, next) => {
   try {
-    let token;
-
-    // Check for token in Authorization header (Format: Bearer <token>)
-    if (req.headers.authorization) {
-      const authHeader = req.headers.authorization.trim();
-      if (authHeader.startsWith('Bearer')) {
-        // Extract everything after the last 'Bearer ' word and strip quotes/whitespace
-        token = authHeader
-          .replace(/^Bearer\s+/i, '')
-          .replace(/^["']|["']$/g, '')
-          .trim();
-      } else {
-        token = authHeader.replace(/^["']|["']$/g, '').trim();
-      }
-    }
+    const token = extractBearerToken(req.headers.authorization);
 
     if (!token) {
       return res
@@ -28,22 +14,31 @@ export const validateUserToken = async (req, res, next) => {
     }
 
     // Verify the token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const secret = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
+    const decoded = jwt.verify(token, secret);
 
     // Check if the user still exists in the database
     const currentUser = await GetAllUsers.findById(decoded.id);
     if (!currentUser) {
-      return res
-        .status(401)
-        .json({ success: false, message: 'The user belonging to this token no longer exists.' });
+      return res.status(401).json({
+        success: false,
+        code: 'USER_NOT_FOUND',
+        message: 'The user belonging to this token no longer exists.',
+      });
     }
 
     // Grant access to the protected route by attaching the user object to the request
     req.user = currentUser;
     next();
   } catch (error) {
-    return res
-      .status(401)
-      .json({ success: false, message: 'Invalid token. Access denied.', error: error.message });
+    const isExpired = error.name === 'TokenExpiredError';
+    return res.status(401).json({
+      success: false,
+      code: isExpired ? 'TOKEN_EXPIRED' : 'INVALID_TOKEN',
+      message: isExpired
+        ? 'Access token has expired. Please refresh your token.'
+        : 'Invalid token. Access denied.',
+      error: error.message,
+    });
   }
 };

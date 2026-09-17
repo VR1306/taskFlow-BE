@@ -5,36 +5,10 @@ import 'dotenv/config';
 import connectDb from './config/database.js';
 import swaggerDocs from './config/swagger.js';
 import apiRoutes from './routes/api.routes.js';
+import { isOriginAllowed, getDatabaseStatus } from './helpers/helpers.js';
 
 const app = express();
 app.disable('x-powered-by');
-
-// CORS configuration
-const parseAllowedOrigins = () => {
-  const envOrigins = process.env.CLIENT_URL
-    ? process.env.CLIENT_URL.split(',').map((url) => url.trim())
-    : [];
-  return [
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://127.0.0.1:3000',
-    'http://localhost:5173',
-    ...envOrigins,
-  ].filter(Boolean);
-};
-
-const isOriginAllowed = (origin) => {
-  if (!origin) return true;
-  const allowed = parseAllowedOrigins();
-  if (allowed.includes(origin) || allowed.includes('*')) {
-    return true;
-  }
-  return (
-    origin.endsWith('.vercel.app') ||
-    origin.startsWith('http://localhost:') ||
-    origin.startsWith('http://127.0.0.1:')
-  );
-};
 
 const corsOptions = {
   origin: (origin, callback) => {
@@ -222,17 +196,6 @@ app.get(['/api-docs', '/docs'], (req, res) => {
   res.send(swaggerHtml);
 });
 
-// Helper to get readable DB status
-const getDatabaseStatus = () => {
-  const states = {
-    0: 'disconnected',
-    1: 'connected',
-    2: 'connecting',
-    3: 'disconnecting',
-  };
-  return states[mongoose.connection.readyState] || 'unknown';
-};
-
 /**
  * @swagger
  * tags:
@@ -255,12 +218,12 @@ const getDatabaseStatus = () => {
  *         description: Database is disconnected or experiencing errors
  */
 app.get('/health', async (req, res) => {
-  let dbStatus = getDatabaseStatus();
+  let dbStatus = getDatabaseStatus(mongoose.connection.readyState);
 
   if (dbStatus !== 'connected') {
     try {
       await connectDb();
-      dbStatus = getDatabaseStatus();
+      dbStatus = getDatabaseStatus(mongoose.connection.readyState);
     } catch (err) {
       dbStatus = 'disconnected';
       console.warn(`Health check database reconnection failed: ${err?.message || 'unknown error'}`);

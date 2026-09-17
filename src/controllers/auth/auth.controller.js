@@ -1,5 +1,12 @@
-import crypto from 'node:crypto';
-import { generateToken, catchAsync } from '../../helpers/helpers.js';
+import {
+  generateAuthTokens,
+  verifyRefreshToken,
+  generateAccessToken,
+  generateRefreshToken,
+  generateRandomHexToken,
+  hashToken,
+  catchAsync,
+} from '../../helpers/helpers.js';
 import { sendPasswordResetEmail } from '../../helpers/sendEmail.js';
 import GetAllUsers from '../../models/users/users.model.js';
 
@@ -22,12 +29,26 @@ export const signInUserApiCall = catchAsync(async (req, res) => {
     return res.status(401).json({ success: false, message: 'Invalid password' });
   }
 
-  const token = generateToken(user);
+  const { accessToken, refreshToken } = generateAuthTokens(user);
+
+  // Store refresh token in user document (retaining up to 10 active sessions)
+  if (!Array.isArray(user.refreshTokens)) {
+    user.refreshTokens = [];
+  }
+  user.refreshTokens.push({ token: refreshToken, createdAt: new Date() });
+  if (user.refreshTokens.length > 10) {
+    user.refreshTokens = user.refreshTokens.slice(-10);
+  }
+  await user.save({ validateBeforeSave: false });
 
   return res.status(200).json({
     success: true,
     message: 'Sign-in successful!',
-    token,
+    token: accessToken,
+    accessToken,
+    refreshToken,
+    defaultModule: 'users',
+    redirectUrl: '/users',
     user: {
       id: user._id.toString(),
       firstName: user.firstName,
@@ -35,6 +56,108 @@ export const signInUserApiCall = catchAsync(async (req, res) => {
       email: user.email,
       role: user.role,
     },
+  });
+});
+
+// API controller for Refreshing Access Token
+export const refreshTokenApiCall = catchAsync(async (req, res) => {
+  const incomingRefreshToken =
+    req.body.refreshToken ||
+    req.headers['x-refresh-token'] ||
+    (req.cookies && req.cookies.refreshToken);
+
+  if (!incomingRefreshToken) {
+    return res.status(400).json({
+      success: false,
+      message: 'Refresh token is required',
+    });
+  }
+
+  // 1. Verify cryptographic validity & expiration of refresh token
+  const decoded = verifyRefreshToken(incomingRefreshToken);
+  if (!decoded || !decoded.id) {
+    return res.status(401).json({
+      success: false,
+      code: 'INVALID_REFRESH_TOKEN',
+      message: 'Invalid or expired refresh token. Please sign in again.',
+    });
+  }
+
+  // 2. Locate user
+  const user = await GetAllUsers.findById(decoded.id);
+  if (!user) {
+    return res.status(401).json({
+      success: false,
+      code: 'USER_NOT_FOUND',
+      message: 'User belonging to this token no longer exists.',
+    });
+  }
+
+  // 3. Verify token presence in user's active refresh tokens
+  const tokenIndex = (user.refreshTokens || []).findIndex(
+    (item) => item.token === incomingRefreshToken
+  );
+
+  if (tokenIndex === -1) {
+    // If token not found, possible token reuse / breach -> clear tokens as safeguard
+    user.refreshTokens = [];
+    await user.save({ validateBeforeSave: false });
+    return res.status(401).json({
+      success: false,
+      code: 'TOKEN_REVOKED',
+      message: 'Refresh token has been revoked or invalidated. Please sign in again.',
+    });
+  }
+
+  // 4. Rotate tokens: generate new access and refresh token
+  const newAccessToken = generateAccessToken(user);
+  const newRefreshToken = generateRefreshToken(user);
+
+  // Update rotated refresh token in user record
+  user.refreshTokens[tokenIndex] = { token: newRefreshToken, createdAt: new Date() };
+  await user.save({ validateBeforeSave: false });
+
+  return res.status(200).json({
+    success: true,
+    message: 'Token refreshed successfully!',
+    token: newAccessToken,
+    accessToken: newAccessToken,
+    refreshToken: newRefreshToken,
+  });
+});
+
+// API controller for Logout (Revoking Refresh Token)
+export const logoutUserApiCall = catchAsync(async (req, res) => {
+  const incomingRefreshToken =
+    req.body?.refreshToken ||
+    req.headers['x-refresh-token'] ||
+    (req.cookies && req.cookies.refreshToken);
+
+  const userId = req.user?._id || req.user?.id;
+
+  if (incomingRefreshToken) {
+    const decoded = verifyRefreshToken(incomingRefreshToken);
+    const targetUserId = userId || decoded?.id;
+    if (targetUserId) {
+      const user = await GetAllUsers.findById(targetUserId);
+      if (user && Array.isArray(user.refreshTokens)) {
+        user.refreshTokens = user.refreshTokens.filter(
+          (item) => item.token !== incomingRefreshToken
+        );
+        await user.save({ validateBeforeSave: false });
+      }
+    }
+  } else if (userId) {
+    const user = await GetAllUsers.findById(userId);
+    if (user) {
+      user.refreshTokens = [];
+      await user.save({ validateBeforeSave: false });
+    }
+  }
+
+  return res.status(200).json({
+    success: true,
+    message: 'Logged out successfully',
   });
 });
 
@@ -51,10 +174,10 @@ export const forgotPasswordEmailVerification = catchAsync(async (req, res) => {
   }
 
   // 1. Generate a raw, random 32-byte reset token
-  const rawResetToken = crypto.randomBytes(32).toString('hex');
+  const rawResetToken = generateRandomHexToken(32);
 
   // 2. Hash the raw token and store it securely in the database
-  user.passwordResetToken = crypto.createHash('sha256').update(rawResetToken).digest('hex');
+  user.passwordResetToken = hashToken(rawResetToken);
 
   // 3. Set the expiration window (10 minutes)
   user.passwordResetExpires = Date.now() + RESET_TOKEN_EXPIRY_MS;
@@ -116,7 +239,7 @@ export const resetPasswordFunction = catchAsync(async (req, res) => {
   }
 
   // Hash the incoming token to match database hash
-  const hashedToken = crypto.createHash('sha256').update(String(token)).digest('hex');
+  const hashedToken = hashToken(token);
 
   const user = await GetAllUsers.findOne({
     passwordResetToken: hashedToken,

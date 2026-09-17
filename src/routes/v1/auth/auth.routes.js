@@ -5,11 +5,14 @@ import {
   forgotPasswordEmailVerification,
   resetPasswordFunction,
   signInUserApiCall,
+  refreshTokenApiCall,
+  logoutUserApiCall,
   changePasswordFunction,
 } from '../../../controllers/auth/auth.controller.js';
 import ForgotPasswordSchema from '../../../models/auth/forgotPassword.model.js';
 import ResetPasswordSchema from '../../../models/auth/resetPassword.model.js';
 import ChangePasswordSchema from '../../../models/auth/changePassword.model.js';
+import RefreshTokenSchema from '../../../models/auth/refreshToken.model.js';
 import { validateUserToken } from '../../../middlewares/protectedApi.middleware.js';
 
 const router = Router();
@@ -18,7 +21,7 @@ const router = Router();
  * @swagger
  * tags:
  *   name: Auth
- *   description: Authentication & Password Recovery endpoints
+ *   description: Authentication, Token Management & Password Recovery endpoints
  */
 
 /**
@@ -26,7 +29,7 @@ const router = Router();
  * /api/v1/auth/signIn:
  *   post:
  *     summary: User Login / Sign In
- *     description: Authenticate user with email & password to receive a JWT bearer token.
+ *     description: Authenticate user with email & password to receive access token, refresh token, and user module landing destination.
  *     tags: [Auth]
  *     security: []
  *     requestBody:
@@ -64,6 +67,18 @@ const router = Router();
  *                 token:
  *                   type: string
  *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *                 accessToken:
+ *                   type: string
+ *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *                 refreshToken:
+ *                   type: string
+ *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *                 defaultModule:
+ *                   type: string
+ *                   example: users
+ *                 redirectUrl:
+ *                   type: string
+ *                   example: /users
  *                 user:
  *                   type: object
  *                   properties:
@@ -75,6 +90,8 @@ const router = Router();
  *                       type: string
  *                     email:
  *                       type: string
+ *                     role:
+ *                       type: string
  *       400:
  *         description: Email and password required or invalid payload
  *       401:
@@ -83,6 +100,76 @@ const router = Router();
  *         description: User not found
  */
 router.post('/signIn', validateRequest(SignInSchema), signInUserApiCall);
+
+/**
+ * @swagger
+ * /api/v1/auth/refresh-token:
+ *   post:
+ *     summary: Refresh Access Token
+ *     description: Provide a valid refresh token to obtain a new access token and rotated refresh token.
+ *     tags: [Auth]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - refreshToken
+ *             properties:
+ *               refreshToken:
+ *                 type: string
+ *                 example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *     responses:
+ *       200:
+ *         description: Token refreshed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Token refreshed successfully!
+ *                 token:
+ *                   type: string
+ *                 accessToken:
+ *                   type: string
+ *                 refreshToken:
+ *                   type: string
+ *       400:
+ *         description: Refresh token required
+ *       401:
+ *         description: Invalid, expired, or revoked refresh token
+ */
+router.post('/refresh-token', validateRequest(RefreshTokenSchema), refreshTokenApiCall);
+
+/**
+ * @swagger
+ * /api/v1/auth/logout:
+ *   post:
+ *     summary: User Logout
+ *     description: Invalidate and revoke the active refresh token.
+ *     tags: [Auth]
+ *     security: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               refreshToken:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Logged out successfully
+ */
+router.post('/logout', logoutUserApiCall);
 
 /**
  * @swagger

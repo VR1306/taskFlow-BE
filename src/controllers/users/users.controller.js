@@ -1,7 +1,6 @@
-import { catchAsync } from '../../helpers/helpers.js';
+import { catchAsync, generateRandomHexToken } from '../../helpers/helpers.js';
 import { sendWelcomeEmail } from '../../helpers/sendEmail.js';
 import GetAllUsers from '../../models/users/users.model.js';
-import crypto from 'node:crypto';
 
 export const getAllUsers = catchAsync(async (req, res) => {
   // 1. Parse pagination values using Number.parseInt with bounds checking
@@ -49,7 +48,7 @@ export const createUserApiCall = catchAsync(async (req, res) => {
   }
 
   // 3. Generate a secure temporary 16-character random password
-  const temporaryPassword = crypto.randomBytes(8).toString('hex');
+  const temporaryPassword = generateRandomHexToken(8);
 
   // 4. Create the new user record (Password automatically hashed in Mongoose pre-save)
   const user = await GetAllUsers.create({
