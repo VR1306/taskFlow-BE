@@ -50,6 +50,9 @@ const router = Router();
  *                 type: string
  *                 format: password
  *                 example: SuperAdmin@123
+ *               rememberMe:
+ *                 type: boolean
+ *                 example: true
  *     responses:
  *       200:
  *         description: Sign-in successful
@@ -73,6 +76,9 @@ const router = Router();
  *                 refreshToken:
  *                   type: string
  *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *                 rememberMe:
+ *                   type: boolean
+ *                   example: true
  *                 defaultModule:
  *                   type: string
  *                   example: users

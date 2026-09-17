@@ -53,12 +53,25 @@ describe('Backend Helper Functions', () => {
       expect(decoded.type).toBe('refresh');
     });
 
-    it('generateAuthTokens returns both accessToken and refreshToken', () => {
-      const tokens = generateAuthTokens(sampleUser);
+    it('generates a valid refresh token with rememberMe flag', () => {
+      const refreshToken = generateRefreshToken(sampleUser, true);
+      expect(typeof refreshToken).toBe('string');
+
+      const decoded = verifyRefreshToken(refreshToken);
+      expect(decoded).not.toBeNull();
+      expect(decoded.id).toBe(sampleUser._id);
+      expect(decoded.type).toBe('refresh');
+      expect(decoded.rememberMe).toBe(true);
+    });
+
+    it('generateAuthTokens returns both accessToken and refreshToken with rememberMe support', () => {
+      const tokens = generateAuthTokens(sampleUser, true);
       expect(tokens).toHaveProperty('accessToken');
       expect(tokens).toHaveProperty('refreshToken');
       expect(verifyAccessToken(tokens.accessToken)).not.toBeNull();
-      expect(verifyRefreshToken(tokens.refreshToken)).not.toBeNull();
+      const decodedRefresh = verifyRefreshToken(tokens.refreshToken);
+      expect(decodedRefresh).not.toBeNull();
+      expect(decodedRefresh.rememberMe).toBe(true);
     });
 
     it('generateToken and verifyToken provide backward compatibility aliases', () => {

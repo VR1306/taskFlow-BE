@@ -14,6 +14,7 @@ export const signInValidationSchema = Joi.object({
     'string.empty': 'Password is required',
     'any.required': 'Password is required',
   }),
+  rememberMe: Joi.boolean().optional().default(false),
 });
 
 export default signInValidationSchema;

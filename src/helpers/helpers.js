@@ -18,19 +18,22 @@ export const generateAccessToken = (user) => {
   return jwt.sign(payload, secret, { expiresIn });
 };
 
-export const generateRefreshToken = (user) => {
+export const generateRefreshToken = (user, rememberMe = false) => {
   const userId = (user._id || user.id || user).toString();
-  const payload = { id: userId, type: 'refresh' };
+  const payload = { id: userId, type: 'refresh', rememberMe: Boolean(rememberMe) };
 
   const secret = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET;
-  const expiresIn = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
+  const defaultExpiry = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
+  const expiresIn = rememberMe
+    ? process.env.JWT_REFRESH_REMEMBER_EXPIRES_IN || '30d'
+    : defaultExpiry;
 
   return jwt.sign(payload, secret, { expiresIn });
 };
 
-export const generateAuthTokens = (user) => {
+export const generateAuthTokens = (user, rememberMe = false) => {
   const accessToken = generateAccessToken(user);
-  const refreshToken = generateRefreshToken(user);
+  const refreshToken = generateRefreshToken(user, rememberMe);
 
   return {
     accessToken,

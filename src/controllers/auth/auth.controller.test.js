@@ -104,6 +104,7 @@ describe('Auth Controller Tests', () => {
           message: 'Sign-in successful!',
           defaultModule: 'users',
           redirectUrl: '/users',
+          rememberMe: false,
           token: expect.any(String),
           accessToken: expect.any(String),
           refreshToken: expect.any(String),
@@ -117,6 +118,41 @@ describe('Auth Controller Tests', () => {
         })
       );
       expect(mockUser.save).toHaveBeenCalled();
+    });
+
+    it('returns 200 and rememberMe: true when rememberMe flag is provided', async () => {
+      const mockUser = {
+        _id: '507f1f77bcf86cd799439011',
+        firstName: 'Jane',
+        lastName: 'Doe',
+        email: 'jane@example.com',
+        role: 'Admin',
+        refreshTokens: [],
+        comparePassword: jest.fn().mockResolvedValue(true),
+        save: jest.fn().mockResolvedValue(true),
+      };
+
+      jest.spyOn(GetAllUsers, 'findOne').mockResolvedValue(mockUser);
+
+      const req = {
+        body: {
+          email: 'jane@example.com',
+          password: 'CorrectPassword@123',
+          rememberMe: true,
+        },
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      const next = jest.fn();
+
+      await signInUserApiCall(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          rememberMe: true,
+        })
+      );
     });
   });
 

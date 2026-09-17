@@ -14,7 +14,7 @@ const RESET_TOKEN_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
 
 // API controller for Sign In
 export const signInUserApiCall = catchAsync(async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, rememberMe } = req.body;
   if (!email || !password) {
     return res.status(400).json({ success: false, message: 'Email and password are required' });
   }
@@ -29,7 +29,8 @@ export const signInUserApiCall = catchAsync(async (req, res) => {
     return res.status(401).json({ success: false, message: 'Invalid password' });
   }
 
-  const { accessToken, refreshToken } = generateAuthTokens(user);
+  const isRememberMe = Boolean(rememberMe);
+  const { accessToken, refreshToken } = generateAuthTokens(user, isRememberMe);
 
   // Store refresh token in user document (retaining up to 10 active sessions)
   if (!Array.isArray(user.refreshTokens)) {
@@ -47,6 +48,7 @@ export const signInUserApiCall = catchAsync(async (req, res) => {
     token: accessToken,
     accessToken,
     refreshToken,
+    rememberMe: isRememberMe,
     defaultModule: 'users',
     redirectUrl: '/users',
     user: {
