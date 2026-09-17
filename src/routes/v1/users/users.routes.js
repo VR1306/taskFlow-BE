@@ -42,6 +42,11 @@ const router = Router();
  *           type: integer
  *           default: 10
  *         description: Number of records per page
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search query matching name, email, or user ID
  *     responses:
  *       200:
  *         description: Successfully fetched users list

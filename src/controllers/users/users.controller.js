@@ -6,12 +6,24 @@ export const getAllUsers = catchAsync(async (req, res) => {
   // 1. Parse pagination values using Number.parseInt with bounds checking
   const page = Math.max(1, Number.parseInt(String(req.query.page), 10) || 1);
   const limit = Math.max(1, Math.min(100, Number.parseInt(String(req.query.limit), 10) || 10));
+  const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
 
   // Calculate skip offset
   const skip = (page - 1) * limit;
 
   // Filter out soft-deleted users
   const filter = { isDeleted: { $ne: true } };
+
+  if (search) {
+    const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const searchRegex = new RegExp(escapedSearch, 'i');
+    filter.$or = [
+      { firstName: searchRegex },
+      { lastName: searchRegex },
+      { email: searchRegex },
+      { userId: searchRegex },
+    ];
+  }
 
   // 2. Run database queries in parallel for efficiency
   const [users, totalUsers] = await Promise.all([

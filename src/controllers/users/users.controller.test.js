@@ -129,6 +129,55 @@ describe('Users Controller', () => {
         })
       );
     });
+
+    it('filters users by search query across firstName, lastName, email, and userId', async () => {
+      const mockUsersList = [
+        {
+          _id: '4',
+          userId: 'TF0004',
+          firstName: 'Sarah',
+          lastName: 'Connor',
+          email: 'sarah@resistance.org',
+        },
+      ];
+
+      const findMock = {
+        select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue(mockUsersList),
+      };
+
+      jest.spyOn(GetAllUsers, 'find').mockReturnValue(findMock);
+      jest.spyOn(GetAllUsers, 'countDocuments').mockResolvedValue(1);
+
+      mockReq.query = { search: 'Sarah' };
+
+      await getAllUsers(mockReq, mockRes);
+
+      expect(GetAllUsers.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          isDeleted: { $ne: true },
+          $or: expect.arrayContaining([
+            { firstName: expect.any(RegExp) },
+            { lastName: expect.any(RegExp) },
+            { email: expect.any(RegExp) },
+            { userId: expect.any(RegExp) },
+          ]),
+        })
+      );
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: mockUsersList,
+          pagination: expect.objectContaining({
+            totalItems: 1,
+            totalPages: 1,
+          }),
+        })
+      );
+    });
   });
 
   describe('createUserApiCall', () => {
