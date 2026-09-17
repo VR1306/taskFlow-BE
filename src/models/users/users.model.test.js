@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
 import bcrypt from 'bcryptjs';
-import GetAllUsers from './users.model.js';
+import GetAllUsers, { getNextUserId } from './users.model.js';
 
 describe('Users Model Unit Tests', () => {
   afterEach(() => {
@@ -19,11 +19,43 @@ describe('Users Model Unit Tests', () => {
     expect(user.lastName).toBe('Wonder');
     expect(user.email).toBe('alice@wonderland.com');
     expect(user.role).toBe('User');
+    expect(user.isDeleted).toBe(false);
     expect(user.refreshTokens).toEqual([]);
+  });
+
+  it('getNextUserId computes sequential TF0001 when no prior users exist', async () => {
+    const mockModel = {
+      findOne: jest.fn().mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          collation: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue(null),
+          }),
+        }),
+      }),
+    };
+
+    const nextId = await getNextUserId(mockModel);
+    expect(nextId).toBe('TF0001');
+  });
+
+  it('getNextUserId increments highest existing TF ID correctly', async () => {
+    const mockModel = {
+      findOne: jest.fn().mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          collation: jest.fn().mockReturnValue({
+            lean: jest.fn().mockResolvedValue({ userId: 'TF0009' }),
+          }),
+        }),
+      }),
+    };
+
+    const nextId = await getNextUserId(mockModel);
+    expect(nextId).toBe('TF0010');
   });
 
   it('hashes password on pre-save hook when password is modified', async () => {
     const user = new GetAllUsers({
+      userId: 'TF0001',
       firstName: 'Bob',
       lastName: 'Marley',
       email: 'bob@reggae.com',
@@ -48,6 +80,7 @@ describe('Users Model Unit Tests', () => {
 
   it('skips password hashing on pre-save hook when password is not modified', async () => {
     const user = new GetAllUsers({
+      userId: 'TF0002',
       firstName: 'Charlie',
       lastName: 'Chaplin',
       email: 'charlie@cinema.com',

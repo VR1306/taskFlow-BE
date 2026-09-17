@@ -1,8 +1,15 @@
 import { Router } from 'express';
-import { getAllUsers, createUserApiCall } from '../../../controllers/users/users.controller.js';
+import {
+  getAllUsers,
+  createUserApiCall,
+  getUserByIdApiCall,
+  updateUserApiCall,
+  deleteUserApiCall,
+} from '../../../controllers/users/users.controller.js';
 import { validateUserToken } from '../../../middlewares/protectedApi.middleware.js';
 import { validateRequest } from '../../../middlewares/validateSchema.js';
 import createUserValidationSchema from '../../../models/users/createUsers.model.js';
+import updateUserValidationSchema from '../../../models/users/updateUsers.model.js';
 
 const router = Router();
 
@@ -18,7 +25,7 @@ const router = Router();
  * /api/v1/users/getAllUsers:
  *   get:
  *     summary: Get All Users (Paginated)
- *     description: Retrieve a paginated list of users in the system. Requires valid Bearer JWT.
+ *     description: Retrieve a paginated list of non-deleted users in the system. Requires valid Bearer JWT.
  *     tags: [Users]
  *     security:
  *       - BearerAuth: []
@@ -38,53 +45,8 @@ const router = Router();
  *     responses:
  *       200:
  *         description: Successfully fetched users list
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 pagination:
- *                   type: object
- *                   properties:
- *                     totalItems:
- *                       type: integer
- *                       example: 25
- *                     totalPages:
- *                       type: integer
- *                       example: 3
- *                     currentPage:
- *                       type: integer
- *                       example: 1
- *                     limit:
- *                       type: integer
- *                       example: 10
- *                     hasNextPage:
- *                       type: boolean
- *                       example: true
- *                     hasPrevPage:
- *                       type: boolean
- *                       example: false
- *                 data:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       _id:
- *                         type: string
- *                       firstName:
- *                         type: string
- *                       lastName:
- *                         type: string
- *                       email:
- *                         type: string
- *                       role:
- *                         type: string
- *                         enum: [User, Admin, SuperAdmin]
  *       401:
- *         description: Unauthorized - missing or invalid token
+ *         description: Unauthorized
  */
 router.get('/getAllUsers', validateUserToken, getAllUsers);
 
@@ -110,26 +72,20 @@ router.get('/getAllUsers', validateUserToken, getAllUsers);
  *             properties:
  *               firstName:
  *                 type: string
- *                 example: John
  *               lastName:
  *                 type: string
- *                 example: Doe
  *               email:
  *                 type: string
- *                 format: email
- *                 example: john.doe@example.com
  *               role:
  *                 type: string
  *                 enum: [User, Admin, SuperAdmin]
- *                 default: User
- *                 example: User
  *     responses:
  *       201:
- *         description: User created successfully and credential email sent
+ *         description: User created successfully
  *       400:
- *         description: Email already exists or validation error
+ *         description: Validation error or Email already exists
  *       401:
- *         description: Unauthorized - missing or invalid token
+ *         description: Unauthorized
  */
 router.post(
   '/createUser',
@@ -137,5 +93,99 @@ router.post(
   validateRequest(createUserValidationSchema),
   createUserApiCall
 );
+
+/**
+ * @swagger
+ * /api/v1/users/getUserById/{id}:
+ *   get:
+ *     summary: Get User By ID
+ *     description: Retrieve user details by database ID. Requires valid Bearer JWT.
+ *     tags: [Users]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: MongoDB user _id
+ *     responses:
+ *       200:
+ *         description: User details
+ *       404:
+ *         description: User not found
+ */
+router.get('/getUserById/:id', validateUserToken, getUserByIdApiCall);
+
+/**
+ * @swagger
+ * /api/v1/users/updateUser/{id}:
+ *   put:
+ *     summary: Update User Details
+ *     description: Update a user's details by database ID. Requires valid Bearer JWT.
+ *     tags: [Users]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: MongoDB user _id
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               firstName:
+ *                 type: string
+ *               lastName:
+ *                 type: string
+ *               role:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: User updated successfully
+ *       404:
+ *         description: User not found
+ */
+router.put(
+  '/updateUser/:id',
+  validateUserToken,
+  validateRequest(updateUserValidationSchema),
+  updateUserApiCall
+);
+
+/**
+ * @swagger
+ * /api/v1/users/deleteUser/{id}:
+ *   delete:
+ *     summary: Soft Delete User
+ *     description: Soft delete a user record by database ID. Requires valid Bearer JWT.
+ *     tags: [Users]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: MongoDB user _id
+ *     responses:
+ *       200:
+ *         description: User deleted successfully
+ *       403:
+ *         description: Cannot delete SuperAdmin
+ *       404:
+ *         description: User not found
+ */
+router.delete('/deleteUser/:id', validateUserToken, deleteUserApiCall);
 
 export default router;

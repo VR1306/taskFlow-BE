@@ -7,21 +7,42 @@ describe('seedSuperAdmin Helper Tests', () => {
     jest.restoreAllMocks();
   });
 
-  it('should not create a super admin if one already exists', async () => {
+  it('should not create a super admin if one already exists with userId', async () => {
+    jest.spyOn(GetAllUsers, 'findOne').mockResolvedValue({
+      userId: 'TF0001',
+      email: 'vijayaraghavan130699@gmail.com',
+      role: 'SuperAdmin',
+    });
+    const createSpy = jest.spyOn(GetAllUsers, 'create').mockResolvedValue({});
+    const updateSpy = jest.spyOn(GetAllUsers, 'updateOne').mockResolvedValue({});
+
+    await seedSuperAdmin();
+
+    expect(createSpy).not.toHaveBeenCalled();
+    expect(updateSpy).not.toHaveBeenCalled();
+  });
+
+  it('should update super admin with userId if one exists without userId', async () => {
     jest.spyOn(GetAllUsers, 'findOne').mockResolvedValue({
       email: 'vijayaraghavan130699@gmail.com',
       role: 'SuperAdmin',
     });
     const createSpy = jest.spyOn(GetAllUsers, 'create').mockResolvedValue({});
+    const updateSpy = jest.spyOn(GetAllUsers, 'updateOne').mockResolvedValue({});
 
     await seedSuperAdmin();
 
     expect(createSpy).not.toHaveBeenCalled();
+    expect(updateSpy).toHaveBeenCalledWith(
+      { email: 'vijayaraghavan130699@gmail.com' },
+      { $set: { userId: 'TF0001' } }
+    );
   });
 
   it('should create a super admin if none exists', async () => {
     jest.spyOn(GetAllUsers, 'findOne').mockResolvedValue(null);
     const createSpy = jest.spyOn(GetAllUsers, 'create').mockResolvedValue({
+      userId: 'TF0001',
       email: 'vijayaraghavan130699@gmail.com',
       role: 'SuperAdmin',
     });

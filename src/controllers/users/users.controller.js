@@ -10,14 +10,28 @@ export const getAllUsers = catchAsync(async (req, res) => {
   // Calculate skip offset
   const skip = (page - 1) * limit;
 
+  // Filter out soft-deleted users
+  const filter = { isDeleted: { $ne: true } };
+
   // 2. Run database queries in parallel for efficiency
   const [users, totalUsers] = await Promise.all([
-    GetAllUsers.find().select('-password').skip(skip).limit(limit).lean(),
-    GetAllUsers.countDocuments(),
+    GetAllUsers.find(filter)
+      .select('-password -passwordResetToken -passwordResetExpires -refreshTokens')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    GetAllUsers.countDocuments(filter),
   ]);
 
+  // Ensure every user has a userId display format
+  const sanitizedUsers = users.map((u, index) => ({
+    ...u,
+    userId: u.userId || `TF${String(skip + index + 1).padStart(4, '0')}`,
+  }));
+
   // 3. Calculate total structural pages available
-  const totalPages = Math.ceil(totalUsers / limit);
+  const totalPages = Math.ceil(totalUsers / limit) || 1;
 
   // 4. Return formatted pagination response
   return res.status(200).json({
@@ -30,7 +44,7 @@ export const getAllUsers = catchAsync(async (req, res) => {
       hasNextPage: page < totalPages,
       hasPrevPage: page > 1,
     },
-    data: users,
+    data: sanitizedUsers,
   });
 });
 
@@ -38,9 +52,9 @@ export const createUserApiCall = catchAsync(async (req, res) => {
   // 1. Parse values from request body
   const { firstName, lastName, email, role } = req.body;
 
-  // 2. Check if user already exists
+  // 2. Check if user already exists (among non-deleted records or active emails)
   const userExists = await GetAllUsers.findOne({ email }).lean();
-  if (userExists) {
+  if (userExists && !userExists.isDeleted) {
     return res.status(400).json({
       success: false,
       message: 'Email already exists. Please use a different email.',
@@ -50,13 +64,14 @@ export const createUserApiCall = catchAsync(async (req, res) => {
   // 3. Generate a secure temporary 16-character random password
   const temporaryPassword = generateRandomHexToken(8);
 
-  // 4. Create the new user record (Password automatically hashed in Mongoose pre-save)
+  // 4. Create the new user record (pre-save hook assigns unique sequential userId and hashes password)
   const user = await GetAllUsers.create({
     firstName,
     lastName,
     email,
-    role,
+    role: role || 'User',
     password: temporaryPassword,
+    isDeleted: false,
   });
 
   // 5. Send the welcome email in the background
@@ -76,10 +91,129 @@ export const createUserApiCall = catchAsync(async (req, res) => {
     message: 'User created successfully and credential email sent!',
     user: {
       id: user._id.toString(),
+      userId: user.userId,
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
       role: user.role,
+      createdAt: user.createdAt,
     },
+  });
+});
+
+export const getUserByIdApiCall = catchAsync(async (req, res) => {
+  const { id } = req.params;
+
+  const user = await GetAllUsers.findOne({ _id: id, isDeleted: { $ne: true } })
+    .select('-password -passwordResetToken -passwordResetExpires -refreshTokens')
+    .lean();
+
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      message: 'User not found.',
+    });
+  }
+
+  return res.status(200).json({
+    success: true,
+    data: {
+      ...user,
+      id: user._id.toString(),
+    },
+  });
+});
+
+export const updateUserApiCall = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { firstName, lastName, role, email } = req.body;
+
+  const user = await GetAllUsers.findOne({ _id: id, isDeleted: { $ne: true } });
+
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      message: 'User not found.',
+    });
+  }
+
+  // Protect SuperAdmin account
+  if (
+    (user.role === 'SuperAdmin' || user.email === 'vijayaraghavan130699@gmail.com') &&
+    role &&
+    role !== 'SuperAdmin'
+  ) {
+    return res.status(403).json({
+      success: false,
+      message: 'Cannot demote the primary SuperAdmin account.',
+    });
+  }
+
+  // Check email uniqueness if email is changed
+  if (email && email !== user.email) {
+    const emailConflict = await GetAllUsers.findOne({
+      email,
+      _id: { $ne: id },
+      isDeleted: { $ne: true },
+    }).lean();
+
+    if (emailConflict) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is already in use by another member.',
+      });
+    }
+    user.email = email;
+  }
+
+  if (firstName) user.firstName = firstName;
+  if (lastName) user.lastName = lastName;
+  if (role) user.role = role;
+
+  await user.save();
+
+  return res.status(200).json({
+    success: true,
+    message: 'User updated successfully.',
+    data: {
+      id: user._id.toString(),
+      userId: user.userId,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      role: user.role,
+      updatedAt: user.updatedAt,
+    },
+  });
+});
+
+export const deleteUserApiCall = catchAsync(async (req, res) => {
+  const { id } = req.params;
+
+  const user = await GetAllUsers.findOne({ _id: id, isDeleted: { $ne: true } });
+
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      message: 'User not found.',
+    });
+  }
+
+  // Prevent deleting SuperAdmin
+  if (user.role === 'SuperAdmin' || user.email === 'vijayaraghavan130699@gmail.com') {
+    return res.status(403).json({
+      success: false,
+      message: 'Deletion prohibited: SuperAdmin account cannot be deleted.',
+    });
+  }
+
+  // Soft delete user
+  user.isDeleted = true;
+  user.deletedAt = new Date();
+  await user.save();
+
+  return res.status(200).json({
+    success: true,
+    message: 'User deleted successfully.',
   });
 });

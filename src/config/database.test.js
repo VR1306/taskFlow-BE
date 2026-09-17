@@ -39,7 +39,9 @@ describe('Database Connection Module Tests', () => {
     };
 
     jest.spyOn(mongoose, 'connect').mockResolvedValue(mockMongooseInstance);
-    jest.spyOn(GetAllUsers, 'findOne').mockResolvedValue({ email: 'admin@taskflow.com' });
+    jest
+      .spyOn(GetAllUsers, 'findOne')
+      .mockResolvedValue({ email: 'admin@taskflow.com', userId: 'TF0001' });
 
     const conn = await connectDb();
 
@@ -57,7 +59,9 @@ describe('Database Connection Module Tests', () => {
     };
 
     jest.spyOn(mongoose, 'connect').mockResolvedValue(mockMongooseInstance);
-    jest.spyOn(GetAllUsers, 'findOne').mockResolvedValue({ email: 'admin@taskflow.com' });
+    jest
+      .spyOn(GetAllUsers, 'findOne')
+      .mockResolvedValue({ email: 'admin@taskflow.com', userId: 'TF0001' });
 
     const conn1 = await connectDb();
     expect(conn1).toStrictEqual(mockMongooseInstance);

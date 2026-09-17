@@ -1,6 +1,12 @@
 import { jest } from '@jest/globals';
 import nodemailer from 'nodemailer';
-import { getAllUsers, createUserApiCall } from './users.controller.js';
+import {
+  getAllUsers,
+  createUserApiCall,
+  getUserByIdApiCall,
+  updateUserApiCall,
+  deleteUserApiCall,
+} from './users.controller.js';
 import GetAllUsers from '../../models/users/users.model.js';
 
 describe('Users Controller', () => {
@@ -27,20 +33,29 @@ describe('Users Controller', () => {
   });
 
   describe('getAllUsers', () => {
-    it('returns paginated list of users with default page and limit', async () => {
+    it('returns paginated list of non-deleted users with default page and limit', async () => {
       const mockUsersList = [
         {
           _id: '1',
+          userId: 'TF0001',
           firstName: 'Alice',
           lastName: 'Smith',
           email: 'alice@example.com',
           role: 'User',
         },
-        { _id: '2', firstName: 'Bob', lastName: 'Jones', email: 'bob@example.com', role: 'Admin' },
+        {
+          _id: '2',
+          userId: 'TF0002',
+          firstName: 'Bob',
+          lastName: 'Jones',
+          email: 'bob@example.com',
+          role: 'Admin',
+        },
       ];
 
       const findMock = {
         select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
         skip: jest.fn().mockReturnThis(),
         limit: jest.fn().mockReturnThis(),
         lean: jest.fn().mockResolvedValue(mockUsersList),
@@ -53,7 +68,7 @@ describe('Users Controller', () => {
 
       await getAllUsers(mockReq, mockRes);
 
-      expect(GetAllUsers.find).toHaveBeenCalled();
+      expect(GetAllUsers.find).toHaveBeenCalledWith({ isDeleted: { $ne: true } });
       expect(findMock.skip).toHaveBeenCalledWith(0);
       expect(findMock.limit).toHaveBeenCalledWith(10);
       expect(mockRes.status).toHaveBeenCalledWith(200);
@@ -75,11 +90,18 @@ describe('Users Controller', () => {
 
     it('handles custom pagination parameters and edge bounds', async () => {
       const mockUsersList = [
-        { _id: '3', firstName: 'Charlie', lastName: 'Brown', email: 'charlie@example.com' },
+        {
+          _id: '3',
+          userId: 'TF0003',
+          firstName: 'Charlie',
+          lastName: 'Brown',
+          email: 'charlie@example.com',
+        },
       ];
 
       const findMock = {
         select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
         skip: jest.fn().mockReturnThis(),
         limit: jest.fn().mockReturnThis(),
         lean: jest.fn().mockResolvedValue(mockUsersList),
@@ -110,7 +132,7 @@ describe('Users Controller', () => {
   });
 
   describe('createUserApiCall', () => {
-    it('returns 400 when email already exists', async () => {
+    it('returns 400 when email already exists and is not deleted', async () => {
       mockReq.body = {
         firstName: 'Existing',
         lastName: 'User',
@@ -119,7 +141,9 @@ describe('Users Controller', () => {
       };
 
       jest.spyOn(GetAllUsers, 'findOne').mockReturnValue({
-        lean: jest.fn().mockResolvedValue({ _id: 'user-1', email: 'exists@example.com' }),
+        lean: jest
+          .fn()
+          .mockResolvedValue({ _id: 'user-1', email: 'exists@example.com', isDeleted: false }),
       });
 
       await createUserApiCall(mockReq, mockRes);
@@ -145,10 +169,12 @@ describe('Users Controller', () => {
 
       const mockCreatedUser = {
         _id: 'new-id-123',
+        userId: 'TF0005',
         firstName: 'New',
         lastName: 'User',
         email: 'newuser@example.com',
         role: 'User',
+        createdAt: new Date(),
       };
 
       jest.spyOn(GetAllUsers, 'create').mockResolvedValue(mockCreatedUser);
@@ -170,6 +196,7 @@ describe('Users Controller', () => {
           message: 'User created successfully and credential email sent!',
           user: expect.objectContaining({
             id: 'new-id-123',
+            userId: 'TF0005',
             email: 'newuser@example.com',
           }),
         })
@@ -190,10 +217,12 @@ describe('Users Controller', () => {
 
       const mockCreatedUser = {
         _id: 'new-id-123',
+        userId: 'TF0006',
         firstName: 'New',
         lastName: 'User',
         email: 'newuser@example.com',
         role: 'User',
+        createdAt: new Date(),
       };
 
       jest.spyOn(GetAllUsers, 'create').mockResolvedValue(mockCreatedUser);
@@ -209,6 +238,210 @@ describe('Users Controller', () => {
         })
       );
       consoleErrorSpy.mockRestore();
+    });
+  });
+
+  describe('getUserByIdApiCall', () => {
+    it('returns user details when user is found and not deleted', async () => {
+      mockReq.params = { id: '6aa5108c8c37e86149679ff7' };
+
+      const mockUser = {
+        _id: '6aa5108c8c37e86149679ff7',
+        userId: 'TF0001',
+        firstName: 'Vijayaraghavan',
+        lastName: 'K',
+        email: 'vijayaraghavan130699@gmail.com',
+        role: 'SuperAdmin',
+      };
+
+      const findOneMock = {
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue(mockUser),
+      };
+
+      jest.spyOn(GetAllUsers, 'findOne').mockReturnValue(findOneMock);
+
+      await getUserByIdApiCall(mockReq, mockRes);
+
+      expect(GetAllUsers.findOne).toHaveBeenCalledWith({
+        _id: '6aa5108c8c37e86149679ff7',
+        isDeleted: { $ne: true },
+      });
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: true,
+        data: expect.objectContaining({
+          id: '6aa5108c8c37e86149679ff7',
+          userId: 'TF0001',
+        }),
+      });
+    });
+
+    it('returns 404 when user is not found or is soft-deleted', async () => {
+      mockReq.params = { id: 'unknown-id' };
+
+      const findOneMock = {
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue(null),
+      };
+
+      jest.spyOn(GetAllUsers, 'findOne').mockReturnValue(findOneMock);
+
+      await getUserByIdApiCall(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(404);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: false,
+        message: 'User not found.',
+      });
+    });
+  });
+
+  describe('updateUserApiCall', () => {
+    it('updates user fields successfully', async () => {
+      mockReq.params = { id: 'user-123' };
+      mockReq.body = {
+        firstName: 'UpdatedFirst',
+        lastName: 'UpdatedLast',
+        role: 'Admin',
+      };
+
+      const mockUserDoc = {
+        _id: 'user-123',
+        userId: 'TF0002',
+        firstName: 'OldFirst',
+        lastName: 'OldLast',
+        email: 'user@example.com',
+        role: 'User',
+        save: jest.fn().mockResolvedValue(true),
+      };
+
+      jest.spyOn(GetAllUsers, 'findOne').mockResolvedValue(mockUserDoc);
+
+      await updateUserApiCall(mockReq, mockRes);
+
+      expect(mockUserDoc.firstName).toBe('UpdatedFirst');
+      expect(mockUserDoc.lastName).toBe('UpdatedLast');
+      expect(mockUserDoc.role).toBe('Admin');
+      expect(mockUserDoc.save).toHaveBeenCalled();
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          message: 'User updated successfully.',
+        })
+      );
+    });
+
+    it('prevents demoting primary SuperAdmin', async () => {
+      mockReq.params = { id: 'superadmin-123' };
+      mockReq.body = {
+        role: 'User',
+      };
+
+      const mockSuperAdminDoc = {
+        _id: 'superadmin-123',
+        email: 'vijayaraghavan130699@gmail.com',
+        role: 'SuperAdmin',
+      };
+
+      jest.spyOn(GetAllUsers, 'findOne').mockResolvedValue(mockSuperAdminDoc);
+
+      await updateUserApiCall(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: false,
+        message: 'Cannot demote the primary SuperAdmin account.',
+      });
+    });
+
+    it('returns 400 when updating email to an already used email', async () => {
+      mockReq.params = { id: 'user-123' };
+      mockReq.body = { email: 'conflict@example.com' };
+
+      const mockUserDoc = {
+        _id: 'user-123',
+        email: 'old@example.com',
+        role: 'User',
+      };
+
+      jest
+        .spyOn(GetAllUsers, 'findOne')
+        .mockResolvedValueOnce(mockUserDoc) // find target user
+        .mockReturnValueOnce({
+          lean: jest.fn().mockResolvedValue({ _id: 'other-user', email: 'conflict@example.com' }),
+        }); // email conflict check
+
+      await updateUserApiCall(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: false,
+        message: 'Email is already in use by another member.',
+      });
+    });
+  });
+
+  describe('deleteUserApiCall (Soft Delete)', () => {
+    it('soft deletes a regular user', async () => {
+      mockReq.params = { id: 'user-to-delete' };
+
+      const mockUserDoc = {
+        _id: 'user-to-delete',
+        email: 'regular@example.com',
+        role: 'User',
+        isDeleted: false,
+        deletedAt: null,
+        save: jest.fn().mockResolvedValue(true),
+      };
+
+      jest.spyOn(GetAllUsers, 'findOne').mockResolvedValue(mockUserDoc);
+
+      await deleteUserApiCall(mockReq, mockRes);
+
+      expect(mockUserDoc.isDeleted).toBe(true);
+      expect(mockUserDoc.deletedAt).toBeInstanceOf(Date);
+      expect(mockUserDoc.save).toHaveBeenCalled();
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: true,
+        message: 'User deleted successfully.',
+      });
+    });
+
+    it('prevents soft-deleting SuperAdmin', async () => {
+      mockReq.params = { id: 'superadmin-id' };
+
+      const mockSuperAdminDoc = {
+        _id: 'superadmin-id',
+        email: 'vijayaraghavan130699@gmail.com',
+        role: 'SuperAdmin',
+      };
+
+      jest.spyOn(GetAllUsers, 'findOne').mockResolvedValue(mockSuperAdminDoc);
+
+      await deleteUserApiCall(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: false,
+        message: 'Deletion prohibited: SuperAdmin account cannot be deleted.',
+      });
+    });
+
+    it('returns 404 if user to delete is not found', async () => {
+      mockReq.params = { id: 'unknown-id' };
+
+      jest.spyOn(GetAllUsers, 'findOne').mockResolvedValue(null);
+
+      await deleteUserApiCall(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(404);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: false,
+        message: 'User not found.',
+      });
     });
   });
 });

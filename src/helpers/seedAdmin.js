@@ -7,6 +7,7 @@ export const seedSuperAdmin = async () => {
 
     if (!existingAdmin) {
       await GetAllUsers.create({
+        userId: 'TF0001',
         firstName: 'Vijayaraghavan',
         lastName: 'K',
         email: superAdminEmail,
@@ -14,6 +15,8 @@ export const seedSuperAdmin = async () => {
         role: 'SuperAdmin',
       });
       console.log('⚡ Initial SuperAdmin account seeded successfully.');
+    } else if (!existingAdmin.userId) {
+      await GetAllUsers.updateOne({ email: superAdminEmail }, { $set: { userId: 'TF0001' } });
     }
   } catch (error) {
     console.error('Error seeding SuperAdmin:', error.message);
