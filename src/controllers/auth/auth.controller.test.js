@@ -1,7 +1,15 @@
 import { jest } from '@jest/globals';
-import { signInUserApiCall, refreshTokenApiCall, logoutUserApiCall } from './auth.controller.js';
+import nodemailer from 'nodemailer';
+import {
+  signInUserApiCall,
+  refreshTokenApiCall,
+  logoutUserApiCall,
+  forgotPasswordEmailVerification,
+  resetPasswordFunction,
+  changePasswordFunction,
+} from './auth.controller.js';
 import GetAllUsers from '../../models/users/users.model.js';
-import { generateRefreshToken } from '../../helpers/helpers.js';
+import { generateRefreshToken, hashToken } from '../../helpers/helpers.js';
 
 describe('Auth Controller Tests', () => {
   const secret = 'test-secret-key-123456789012345678901234567890';
@@ -142,6 +150,52 @@ describe('Auth Controller Tests', () => {
       );
     });
 
+    it('returns 401 if user belonging to token is not found', async () => {
+      const userId = '507f1f77bcf86cd799439011';
+      const validRefreshToken = generateRefreshToken({ _id: userId });
+
+      jest.spyOn(GetAllUsers, 'findById').mockResolvedValue(null);
+
+      const req = { body: { refreshToken: validRefreshToken } };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await refreshTokenApiCall(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: 'USER_NOT_FOUND',
+        })
+      );
+    });
+
+    it('returns 401 and invalidates sessions if token is not found in user record (reuse detection)', async () => {
+      const userId = '507f1f77bcf86cd799439011';
+      const validRefreshToken = generateRefreshToken({ _id: userId });
+
+      const mockUser = {
+        _id: userId,
+        refreshTokens: [{ token: 'different-token' }],
+        save: jest.fn().mockResolvedValue(true),
+      };
+
+      jest.spyOn(GetAllUsers, 'findById').mockResolvedValue(mockUser);
+
+      const req = { body: { refreshToken: validRefreshToken } };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await refreshTokenApiCall(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: 'TOKEN_REVOKED',
+        })
+      );
+      expect(mockUser.refreshTokens).toEqual([]);
+      expect(mockUser.save).toHaveBeenCalled();
+    });
+
     it('rotates refresh token and returns new tokens on valid refresh token', async () => {
       const userId = '507f1f77bcf86cd799439011';
       const validRefreshToken = generateRefreshToken({ _id: userId });
@@ -204,6 +258,330 @@ describe('Auth Controller Tests', () => {
       });
       expect(mockUser.refreshTokens).toEqual([{ token: 'other-token' }]);
       expect(mockUser.save).toHaveBeenCalled();
+    });
+
+    it('clears all sessions when logged out with user id and no specific refresh token', async () => {
+      const userId = '507f1f77bcf86cd799439011';
+      const mockUser = {
+        _id: userId,
+        refreshTokens: [{ token: 'token-1' }],
+        save: jest.fn().mockResolvedValue(true),
+      };
+
+      jest.spyOn(GetAllUsers, 'findById').mockResolvedValue(mockUser);
+
+      const req = { user: { _id: userId } };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await logoutUserApiCall(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(mockUser.refreshTokens).toEqual([]);
+      expect(mockUser.save).toHaveBeenCalled();
+    });
+  });
+
+  describe('forgotPasswordEmailVerification', () => {
+    it('returns 400 if email is missing', async () => {
+      const req = { body: {} };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await forgotPasswordEmailVerification(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        message: 'Email is required',
+      });
+    });
+
+    it('returns 404 if user is not found', async () => {
+      jest.spyOn(GetAllUsers, 'findOne').mockResolvedValue(null);
+
+      const req = { body: { email: 'unknown@example.com' } };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await forgotPasswordEmailVerification(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        message: 'User not found',
+      });
+    });
+
+    it('saves reset token and sends email successfully', async () => {
+      const mockUser = {
+        _id: '507f1f77bcf86cd799439011',
+        firstName: 'Alex',
+        lastName: 'Ray',
+        email: 'alex@example.com',
+        save: jest.fn().mockResolvedValue(true),
+      };
+
+      jest.spyOn(GetAllUsers, 'findOne').mockResolvedValue(mockUser);
+      const mockSendMail = jest.fn().mockResolvedValue({ messageId: 'msg-1' });
+      jest.spyOn(nodemailer, 'createTransport').mockReturnValue({
+        sendMail: mockSendMail,
+      });
+
+      const req = { body: { email: 'alex@example.com' } };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await forgotPasswordEmailVerification(req, res);
+
+      expect(mockUser.save).toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          message: expect.stringContaining('successfully dispatched'),
+        })
+      );
+    });
+
+    it('rolls back token and returns 500 when email delivery fails', async () => {
+      const mockUser = {
+        _id: '507f1f77bcf86cd799439011',
+        firstName: 'Alex',
+        email: 'alex@example.com',
+        save: jest.fn().mockResolvedValue(true),
+      };
+
+      jest.spyOn(GetAllUsers, 'findOne').mockResolvedValue(mockUser);
+      const mockSendMail = jest.fn().mockRejectedValue(new Error('SMTP Connection Refused'));
+      jest.spyOn(nodemailer, 'createTransport').mockReturnValue({
+        sendMail: mockSendMail,
+      });
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      const req = { body: { email: 'alex@example.com' } };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await forgotPasswordEmailVerification(req, res);
+
+      expect(mockUser.passwordResetToken).toBeUndefined();
+      expect(mockUser.passwordResetExpires).toBeUndefined();
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          message: 'Error sending the email. Try again later.',
+        })
+      );
+
+      consoleErrorSpy.mockRestore();
+    });
+  });
+
+  describe('resetPasswordFunction', () => {
+    it('returns 400 if token is missing', async () => {
+      const req = { query: {}, params: {}, body: { password: 'Pass', confirmPassword: 'Pass' } };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await resetPasswordFunction(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        message: 'Reset token is required',
+      });
+    });
+
+    it('returns 400 if password is missing', async () => {
+      const req = { query: { token: 'sample-token' }, params: {}, body: {} };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await resetPasswordFunction(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        message: 'Password is required',
+      });
+    });
+
+    it('returns 400 if passwords do not match', async () => {
+      const req = {
+        query: { token: 'sample-token' },
+        params: {},
+        body: { password: 'NewPassword123!', confirmPassword: 'DifferentPassword123!' },
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await resetPasswordFunction(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        message: 'Passwords do not match',
+      });
+    });
+
+    it('returns 401 if token is invalid or expired', async () => {
+      jest.spyOn(GetAllUsers, 'findOne').mockResolvedValue(null);
+
+      const req = {
+        query: { token: 'invalid-or-expired-token' },
+        params: {},
+        body: { password: 'NewPassword123!', confirmPassword: 'NewPassword123!' },
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await resetPasswordFunction(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        message: 'Token is invalid or has expired',
+      });
+    });
+
+    it('resets password and clears reset token on valid request', async () => {
+      const mockUser = {
+        _id: '507f1f77bcf86cd799439011',
+        passwordResetToken: hashToken('valid-token'),
+        password: 'OldPassword',
+        save: jest.fn().mockResolvedValue(true),
+      };
+
+      jest.spyOn(GetAllUsers, 'findOne').mockResolvedValue(mockUser);
+
+      const req = {
+        query: { token: 'valid-token' },
+        params: {},
+        body: { password: 'BrandNewPassword123!', confirmPassword: 'BrandNewPassword123!' },
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await resetPasswordFunction(req, res);
+
+      expect(mockUser.password).toBe('BrandNewPassword123!');
+      expect(mockUser.passwordResetToken).toBeUndefined();
+      expect(mockUser.passwordResetExpires).toBeUndefined();
+      expect(mockUser.save).toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          message: expect.stringContaining('Password reset successful'),
+        })
+      );
+    });
+  });
+
+  describe('changePasswordFunction', () => {
+    it('returns 400 if required fields are missing', async () => {
+      const req = { user: { _id: 'user-1' }, body: { currentPassword: '123' } };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await changePasswordFunction(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        message: 'All fields are required',
+      });
+    });
+
+    it('returns 400 if new password and confirmPassword do not match', async () => {
+      const req = {
+        user: { _id: 'user-1' },
+        body: {
+          currentPassword: 'OldPassword123!',
+          newPassword: 'NewPassword123!',
+          confirmPassword: 'MismatchPassword123!',
+        },
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await changePasswordFunction(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        message: 'New passwords do not match',
+      });
+    });
+
+    it('returns 404 if user is not found', async () => {
+      jest.spyOn(GetAllUsers, 'findById').mockResolvedValue(null);
+
+      const req = {
+        user: { _id: 'nonexistent-user' },
+        body: {
+          currentPassword: 'OldPassword123!',
+          newPassword: 'NewPassword123!',
+          confirmPassword: 'NewPassword123!',
+        },
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await changePasswordFunction(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        message: 'User not found',
+      });
+    });
+
+    it('returns 401 if current password is incorrect', async () => {
+      const mockUser = {
+        _id: 'user-1',
+        comparePassword: jest.fn().mockResolvedValue(false),
+      };
+
+      jest.spyOn(GetAllUsers, 'findById').mockResolvedValue(mockUser);
+
+      const req = {
+        user: { _id: 'user-1' },
+        body: {
+          currentPassword: 'WrongCurrentPassword',
+          newPassword: 'NewPassword123!',
+          confirmPassword: 'NewPassword123!',
+        },
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await changePasswordFunction(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        message: 'Current password is incorrect',
+      });
+    });
+
+    it('changes password successfully on valid input', async () => {
+      const mockUser = {
+        _id: 'user-1',
+        password: 'OldPassword',
+        comparePassword: jest.fn().mockResolvedValue(true),
+        save: jest.fn().mockResolvedValue(true),
+      };
+
+      jest.spyOn(GetAllUsers, 'findById').mockResolvedValue(mockUser);
+
+      const req = {
+        user: { _id: 'user-1' },
+        body: {
+          currentPassword: 'OldPassword123!',
+          newPassword: 'NewPassword123!',
+          confirmPassword: 'NewPassword123!',
+        },
+      };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await changePasswordFunction(req, res);
+
+      expect(mockUser.password).toBe('NewPassword123!');
+      expect(mockUser.save).toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({
+        success: true,
+        message: 'Password changed successfully!',
+      });
     });
   });
 });

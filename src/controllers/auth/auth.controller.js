@@ -62,9 +62,7 @@ export const signInUserApiCall = catchAsync(async (req, res) => {
 // API controller for Refreshing Access Token
 export const refreshTokenApiCall = catchAsync(async (req, res) => {
   const incomingRefreshToken =
-    req.body.refreshToken ||
-    req.headers['x-refresh-token'] ||
-    (req.cookies && req.cookies.refreshToken);
+    req.body?.refreshToken || req.headers?.['x-refresh-token'] || req.cookies?.refreshToken;
 
   if (!incomingRefreshToken) {
     return res.status(400).json({
@@ -75,7 +73,7 @@ export const refreshTokenApiCall = catchAsync(async (req, res) => {
 
   // 1. Verify cryptographic validity & expiration of refresh token
   const decoded = verifyRefreshToken(incomingRefreshToken);
-  if (!decoded || !decoded.id) {
+  if (!decoded?.id) {
     return res.status(401).json({
       success: false,
       code: 'INVALID_REFRESH_TOKEN',
@@ -129,9 +127,7 @@ export const refreshTokenApiCall = catchAsync(async (req, res) => {
 // API controller for Logout (Revoking Refresh Token)
 export const logoutUserApiCall = catchAsync(async (req, res) => {
   const incomingRefreshToken =
-    req.body?.refreshToken ||
-    req.headers['x-refresh-token'] ||
-    (req.cookies && req.cookies.refreshToken);
+    req.body?.refreshToken || req.headers?.['x-refresh-token'] || req.cookies?.refreshToken;
 
   const userId = req.user?._id || req.user?.id;
 

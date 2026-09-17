@@ -5,7 +5,7 @@ import { extractBearerToken } from '../helpers/helpers.js';
 // 1. Check if the user is logged in via JWT
 export const validateUserToken = async (req, res, next) => {
   try {
-    const token = extractBearerToken(req.headers.authorization);
+    const token = extractBearerToken(req.headers?.authorization);
 
     if (!token) {
       return res

@@ -1,19 +1,20 @@
 import nodemailer from 'nodemailer';
 
-// Singleton Secure Transporter (Explicit SSL/TLS encryption for SonarQube / SMTP compliance)
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 465,
-  secure: true, // Uses SSL/TLS
-  auth: {
-    user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_APP_PASS,
-  },
-  tls: {
-    rejectUnauthorized: true,
-    minVersion: 'TLSv1.2',
-  },
-});
+// Secure Transporter Factory (Explicit SSL/TLS encryption for SonarQube / SMTP compliance)
+export const getTransporter = () =>
+  nodemailer.createTransport({
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true, // Uses SSL/TLS
+    auth: {
+      user: process.env.GMAIL_USER,
+      pass: process.env.GMAIL_APP_PASS,
+    },
+    tls: {
+      rejectUnauthorized: true,
+      minVersion: 'TLSv1.2',
+    },
+  });
 
 export const sendWelcomeEmail = async (options) => {
   const htmlMessage = `
@@ -33,6 +34,7 @@ export const sendWelcomeEmail = async (options) => {
   `;
 
   try {
+    const transporter = getTransporter();
     await transporter.sendMail({
       from: `Taskflow <${process.env.GMAIL_USER}>`,
       to: options.email,
@@ -63,6 +65,7 @@ export const sendPasswordResetEmail = async (options) => {
     </div>
   `;
 
+  const transporter = getTransporter();
   await transporter.sendMail({
     from: `"TaskFlow Security" <${process.env.GMAIL_USER}>`,
     to: options.email,

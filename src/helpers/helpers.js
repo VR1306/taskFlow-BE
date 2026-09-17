@@ -44,7 +44,7 @@ export const verifyAccessToken = (token) => {
   try {
     const secret = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
     return jwt.verify(token, secret);
-  } catch (_error) {
+  } catch {
     return null;
   }
 };
@@ -53,7 +53,7 @@ export const verifyRefreshToken = (token) => {
   try {
     const secret = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET;
     return jwt.verify(token, secret);
-  } catch (_error) {
+  } catch {
     return null;
   }
 };
