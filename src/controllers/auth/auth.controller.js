@@ -124,7 +124,7 @@ export const resetPasswordFunction = catchAsync(async (req, res) => {
   });
 
   if (!user) {
-    return res.status(400).json({ success: false, message: 'Token is invalid or has expired' });
+    return res.status(401).json({ success: false, message: 'Token is invalid or has expired' });
   }
 
   user.password = password;
