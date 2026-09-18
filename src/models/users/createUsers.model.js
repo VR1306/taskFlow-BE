@@ -19,8 +19,11 @@ export const createUserValidationSchema = Joi.object({
       'string.email': 'Please enter a valid email address',
       'any.required': 'Email is required',
     }),
-  role: Joi.string().valid('User', 'Admin', 'SuperAdmin').default('User').messages({
-    'any.only': 'Role must be either User, Admin, or SuperAdmin',
+  role: Joi.string().valid('User', 'Admin', 'Manager', 'SuperAdmin').default('User').messages({
+    'any.only': 'Role must be either User, Admin, Manager, or SuperAdmin',
+  }),
+  isActive: Joi.boolean().default(true).messages({
+    'boolean.base': 'isActive must be a boolean',
   }),
 });
 

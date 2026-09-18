@@ -42,6 +42,7 @@ describe('Users Controller', () => {
           lastName: 'Smith',
           email: 'alice@example.com',
           role: 'User',
+          isActive: true,
         },
         {
           _id: '2',
@@ -50,6 +51,7 @@ describe('Users Controller', () => {
           lastName: 'Jones',
           email: 'bob@example.com',
           role: 'Admin',
+          isActive: true,
         },
       ];
 
@@ -138,6 +140,7 @@ describe('Users Controller', () => {
           firstName: 'Sarah',
           lastName: 'Connor',
           email: 'sarah@resistance.org',
+          isActive: true,
         },
       ];
 
@@ -177,6 +180,77 @@ describe('Users Controller', () => {
           }),
         })
       );
+    });
+
+    it('filters users by role and status query parameters', async () => {
+      const mockUsersList = [
+        {
+          _id: '5',
+          userId: 'TF0005',
+          firstName: 'Emma',
+          lastName: 'Watson',
+          email: 'emma@example.com',
+          role: 'Admin',
+          isActive: true,
+        },
+      ];
+
+      const findMock = {
+        select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue(mockUsersList),
+      };
+
+      jest.spyOn(GetAllUsers, 'find').mockReturnValue(findMock);
+      jest.spyOn(GetAllUsers, 'countDocuments').mockResolvedValue(1);
+
+      mockReq.query = { role: 'Admin', status: 'Active' };
+
+      await getAllUsers(mockReq, mockRes);
+
+      expect(GetAllUsers.find).toHaveBeenCalledWith({
+        isDeleted: { $ne: true },
+        role: 'Admin',
+        isActive: { $ne: false },
+      });
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+    });
+
+    it('filters users by Inactive status', async () => {
+      const mockUsersList = [
+        {
+          _id: '6',
+          userId: 'TF0006',
+          firstName: 'Inactive',
+          lastName: 'User',
+          email: 'inactive@example.com',
+          role: 'User',
+          isActive: false,
+        },
+      ];
+
+      const findMock = {
+        select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue(mockUsersList),
+      };
+
+      jest.spyOn(GetAllUsers, 'find').mockReturnValue(findMock);
+      jest.spyOn(GetAllUsers, 'countDocuments').mockResolvedValue(1);
+
+      mockReq.query = { status: 'Inactive' };
+
+      await getAllUsers(mockReq, mockRes);
+
+      expect(GetAllUsers.find).toHaveBeenCalledWith({
+        isDeleted: { $ne: true },
+        isActive: false,
+      });
+      expect(mockRes.status).toHaveBeenCalledWith(200);
     });
   });
 

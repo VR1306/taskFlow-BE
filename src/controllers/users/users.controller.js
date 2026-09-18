@@ -7,6 +7,8 @@ export const getAllUsers = catchAsync(async (req, res) => {
   const page = Math.max(1, Number.parseInt(String(req.query.page), 10) || 1);
   const limit = Math.max(1, Math.min(100, Number.parseInt(String(req.query.limit), 10) || 10));
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+  const role = typeof req.query.role === 'string' ? req.query.role.trim() : '';
+  const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
 
   // Calculate skip offset
   const skip = (page - 1) * limit;
@@ -25,6 +27,20 @@ export const getAllUsers = catchAsync(async (req, res) => {
     ];
   }
 
+  // Filter by Role
+  if (role && role.toLowerCase() !== 'all') {
+    filter.role = role;
+  }
+
+  // Filter by Status (Active / Inactive)
+  if (status && status.toLowerCase() !== 'all') {
+    if (status.toLowerCase() === 'active' || status === 'true') {
+      filter.isActive = { $ne: false };
+    } else if (status.toLowerCase() === 'inactive' || status === 'false') {
+      filter.isActive = false;
+    }
+  }
+
   // 2. Run database queries in parallel for efficiency
   const [users, totalUsers] = await Promise.all([
     GetAllUsers.find(filter)
@@ -40,6 +56,7 @@ export const getAllUsers = catchAsync(async (req, res) => {
   const sanitizedUsers = users.map((u, index) => ({
     ...u,
     userId: u.userId || `TF${String(skip + index + 1).padStart(4, '0')}`,
+    isActive: u.isActive !== false,
   }));
 
   // 3. Calculate total structural pages available
@@ -62,7 +79,7 @@ export const getAllUsers = catchAsync(async (req, res) => {
 
 export const createUserApiCall = catchAsync(async (req, res) => {
   // 1. Parse values from request body
-  const { firstName, lastName, email, role } = req.body;
+  const { firstName, lastName, email, role, isActive } = req.body;
 
   // 2. Check if user already exists (among non-deleted records or active emails)
   const userExists = await GetAllUsers.findOne({ email }).lean();
@@ -82,6 +99,7 @@ export const createUserApiCall = catchAsync(async (req, res) => {
     lastName,
     email,
     role: role || 'User',
+    isActive: isActive !== undefined ? Boolean(isActive) : true,
     password: temporaryPassword,
     isDeleted: false,
   });
@@ -108,6 +126,7 @@ export const createUserApiCall = catchAsync(async (req, res) => {
       lastName: user.lastName,
       email: user.email,
       role: user.role,
+      isActive: user.isActive !== false,
       createdAt: user.createdAt,
     },
   });
@@ -132,13 +151,14 @@ export const getUserByIdApiCall = catchAsync(async (req, res) => {
     data: {
       ...user,
       id: user._id.toString(),
+      isActive: user.isActive !== false,
     },
   });
 });
 
 export const updateUserApiCall = catchAsync(async (req, res) => {
   const { id } = req.params;
-  const { firstName, lastName, role, email } = req.body;
+  const { firstName, lastName, role, email, isActive } = req.body;
 
   const user = await GetAllUsers.findOne({ _id: id, isDeleted: { $ne: true } });
 
@@ -181,6 +201,7 @@ export const updateUserApiCall = catchAsync(async (req, res) => {
   if (firstName) user.firstName = firstName;
   if (lastName) user.lastName = lastName;
   if (role) user.role = role;
+  if (typeof isActive === 'boolean') user.isActive = isActive;
 
   await user.save();
 
@@ -194,6 +215,7 @@ export const updateUserApiCall = catchAsync(async (req, res) => {
       lastName: user.lastName,
       email: user.email,
       role: user.role,
+      isActive: user.isActive !== false,
       updatedAt: user.updatedAt,
     },
   });

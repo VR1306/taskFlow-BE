@@ -47,6 +47,18 @@ const router = Router();
  *         schema:
  *           type: string
  *         description: Search query matching name, email, or user ID
+ *       - in: query
+ *         name: role
+ *         schema:
+ *           type: string
+ *           enum: [SuperAdmin, Admin, Manager, User, all]
+ *         description: Filter users by role
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [Active, Inactive, all]
+ *         description: Filter users by account status
  *     responses:
  *       200:
  *         description: Successfully fetched users list
