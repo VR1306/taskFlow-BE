@@ -117,6 +117,13 @@ describe('Backend Helper Functions', () => {
       expect(extractBearerToken('')).toBeNull();
       expect(extractBearerToken(null)).toBeNull();
     });
+
+    it('escapes special regex characters correctly using String.raw', () => {
+      const { escapeRegex } = jest.requireActual('./helpers.js');
+      expect(escapeRegex('test (user)+[1]?')).toBe(String.raw`test \(user\)\+\[1\]\?`);
+      expect(escapeRegex('user@domain.com')).toBe(String.raw`user@domain\.com`);
+      expect(escapeRegex('normalText')).toBe('normalText');
+    });
   });
 
   describe('Database & Environment Helpers', () => {

@@ -1,6 +1,36 @@
-import { catchAsync, generateRandomHexToken } from '../../helpers/helpers.js';
+import { catchAsync, generateRandomHexToken, escapeRegex } from '../../helpers/helpers.js';
 import { sendWelcomeEmail } from '../../helpers/sendEmail.js';
 import GetAllUsers from '../../models/users/users.model.js';
+
+export const buildUserFilter = ({ search, role, status }) => {
+  const filter = { isDeleted: { $ne: true } };
+
+  if (search) {
+    const escapedSearch = escapeRegex(search);
+    const searchRegex = new RegExp(escapedSearch, 'i');
+    filter.$or = [
+      { firstName: searchRegex },
+      { lastName: searchRegex },
+      { email: searchRegex },
+      { userId: searchRegex },
+    ];
+  }
+
+  if (role && role.toLowerCase() !== 'all') {
+    filter.role = role;
+  }
+
+  if (status && status.toLowerCase() !== 'all') {
+    const normalized = status.toLowerCase();
+    if (normalized === 'active' || normalized === 'true') {
+      filter.isActive = { $ne: false };
+    } else if (normalized === 'inactive' || normalized === 'false') {
+      filter.isActive = false;
+    }
+  }
+
+  return filter;
+};
 
 export const getAllUsers = catchAsync(async (req, res) => {
   // 1. Parse pagination values using Number.parseInt with bounds checking
@@ -13,33 +43,8 @@ export const getAllUsers = catchAsync(async (req, res) => {
   // Calculate skip offset
   const skip = (page - 1) * limit;
 
-  // Filter out soft-deleted users
-  const filter = { isDeleted: { $ne: true } };
-
-  if (search) {
-    const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const searchRegex = new RegExp(escapedSearch, 'i');
-    filter.$or = [
-      { firstName: searchRegex },
-      { lastName: searchRegex },
-      { email: searchRegex },
-      { userId: searchRegex },
-    ];
-  }
-
-  // Filter by Role
-  if (role && role.toLowerCase() !== 'all') {
-    filter.role = role;
-  }
-
-  // Filter by Status (Active / Inactive)
-  if (status && status.toLowerCase() !== 'all') {
-    if (status.toLowerCase() === 'active' || status === 'true') {
-      filter.isActive = { $ne: false };
-    } else if (status.toLowerCase() === 'inactive' || status === 'false') {
-      filter.isActive = false;
-    }
-  }
+  // Build filter criteria
+  const filter = buildUserFilter({ search, role, status });
 
   // 2. Run database queries in parallel for efficiency
   const [users, totalUsers] = await Promise.all([

@@ -9,7 +9,7 @@ export async function getNextUserId(model) {
       .collation({ locale: 'en_US', numericOrdering: true })
       .lean();
 
-    if (!lastUser || !lastUser.userId) {
+    if (!lastUser?.userId) {
       return 'TF0001';
     }
 
@@ -92,8 +92,8 @@ const userSchema = new mongoose.Schema(
 userSchema.pre(['deleteOne', 'findOneAndDelete', 'deleteMany'], async function () {
   const docToDelete = await this.model.findOne(this.getQuery());
   if (
-    docToDelete &&
-    (docToDelete.role === 'SuperAdmin' || docToDelete.email === 'vijayaraghavan130699@gmail.com')
+    docToDelete?.role === 'SuperAdmin' ||
+    docToDelete?.email === 'vijayaraghavan130699@gmail.com'
   ) {
     throw new Error('Deletion prohibited: SuperAdmin account cannot be deleted.');
   }

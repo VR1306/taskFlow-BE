@@ -63,6 +63,10 @@ export const verifyRefreshToken = (token) => {
 
 export const verifyToken = (token) => verifyAccessToken(token);
 
+export const escapeRegex = (string) => {
+  return String(string).replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+};
+
 export const generateRandomHexToken = (bytes = 32) => {
   return crypto.randomBytes(bytes).toString('hex');
 };

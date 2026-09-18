@@ -252,6 +252,24 @@ describe('Users Controller', () => {
       });
       expect(mockRes.status).toHaveBeenCalledWith(200);
     });
+
+    it('builds user filter accurately with buildUserFilter helper', () => {
+      const { buildUserFilter } = jest.requireActual('./users.controller.js');
+      const filter1 = buildUserFilter({ search: 'John Doe', role: 'Admin', status: 'Active' });
+      expect(filter1.isDeleted).toEqual({ $ne: true });
+      expect(filter1.role).toBe('Admin');
+      expect(filter1.isActive).toEqual({ $ne: false });
+      expect(filter1.$or).toHaveLength(4);
+
+      const filter2 = buildUserFilter({ search: '', role: 'all', status: 'false' });
+      expect(filter2.isDeleted).toEqual({ $ne: true });
+      expect(filter2.role).toBeUndefined();
+      expect(filter2.isActive).toBe(false);
+
+      const filter3 = buildUserFilter({ search: '', role: '', status: 'all' });
+      expect(filter3.role).toBeUndefined();
+      expect(filter3.isActive).toBeUndefined();
+    });
   });
 
   describe('createUserApiCall', () => {
