@@ -6,8 +6,10 @@ import app from './app.js';
 describe('Express App Route & Middleware Tests', () => {
   let server;
   let baseUrl;
+  const originalReadyState = mongoose.connection.readyState;
 
   beforeAll((done) => {
+    mongoose.connection.readyState = 1;
     server = http.createServer(app);
     server.listen(0, () => {
       const port = server.address().port;
@@ -17,7 +19,7 @@ describe('Express App Route & Middleware Tests', () => {
   });
 
   afterAll(async () => {
-    await mongoose.disconnect();
+    mongoose.connection.readyState = originalReadyState;
     await new Promise((resolve) => server.close(resolve));
   });
 
