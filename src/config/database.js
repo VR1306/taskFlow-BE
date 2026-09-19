@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { seedSuperAdmin } from '../helpers/seedAdmin.js';
+import { seedDefaultRoles } from '../helpers/seedRoles.js';
 
 let cached = global.mongoose;
 
@@ -28,11 +29,12 @@ const connectDb = async () => {
         `MongoDB Connected: ${mongooseInstance.connection.host} | Database: ${mongooseInstance.connection.name}`
       );
 
-      // Auto-seed SuperAdmin on startup if not already created
+      // Auto-seed SuperAdmin & Default Roles on startup if not already created
       try {
         await seedSuperAdmin();
+        await seedDefaultRoles();
       } catch (seedErr) {
-        console.error('SuperAdmin seed warning:', seedErr.message);
+        console.error('Database seeding warning:', seedErr.message);
       }
       return mongooseInstance;
     });

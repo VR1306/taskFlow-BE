@@ -14,6 +14,8 @@ import {
   parseAllowedOrigins,
   isOriginAllowed,
   catchAsync,
+  escapeCsvValue,
+  serializeCsv,
 } from './helpers.js';
 
 describe('Backend Helper Functions', () => {
@@ -178,6 +180,28 @@ describe('Backend Helper Functions', () => {
         message: 'Internal Database Server Error',
         error: 'Database connection failed',
       });
+    });
+  });
+
+  describe('CSV Export Serialization Helpers', () => {
+    it('escapes CSV values with commas, quotes, and newlines', () => {
+      expect(escapeCsvValue('Simple')).toBe('Simple');
+      expect(escapeCsvValue('Hello, World')).toBe('"Hello, World"');
+      expect(escapeCsvValue('Quote "test"')).toBe('"Quote ""test"""');
+      expect(escapeCsvValue('Multi\nLine')).toBe('"Multi\nLine"');
+      expect(escapeCsvValue(null)).toBe('');
+      expect(escapeCsvValue(undefined)).toBe('');
+      expect(escapeCsvValue(123)).toBe('123');
+    });
+
+    it('serializes header and data rows into valid CSV output', () => {
+      const headers = ['ID', 'Name', 'Role'];
+      const rows = [
+        ['TF0001', 'John Doe', 'Admin'],
+        ['TF0002', 'Jane, "Smith"', 'User'],
+      ];
+      const result = serializeCsv(headers, rows);
+      expect(result).toBe('ID,Name,Role\nTF0001,John Doe,Admin\nTF0002,"Jane, ""Smith""",User');
     });
   });
 });

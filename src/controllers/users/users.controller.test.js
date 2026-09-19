@@ -6,6 +6,7 @@ import {
   getUserByIdApiCall,
   updateUserApiCall,
   deleteUserApiCall,
+  exportUsersApiCall,
 } from './users.controller.js';
 import GetAllUsers from '../../models/users/users.model.js';
 
@@ -583,6 +584,77 @@ describe('Users Controller', () => {
         success: false,
         message: 'User not found.',
       });
+    });
+  });
+
+  describe('exportUsersApiCall', () => {
+    it('exports users in JSON format by default', async () => {
+      const mockUsers = [
+        {
+          userId: 'TF0001',
+          firstName: 'John',
+          lastName: 'Doe',
+          email: 'john@example.com',
+          role: 'Admin',
+          isActive: true,
+          createdAt: new Date('2026-01-01'),
+        },
+      ];
+
+      const findMock = {
+        select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue(mockUsers),
+      };
+
+      jest.spyOn(GetAllUsers, 'find').mockReturnValue(findMock);
+
+      mockReq.query = { format: 'json' };
+
+      await exportUsersApiCall(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          total: 1,
+          data: expect.arrayContaining([
+            expect.objectContaining({ email: 'john@example.com', role: 'Admin' }),
+          ]),
+        })
+      );
+    });
+
+    it('exports users in CSV format when requested', async () => {
+      const mockUsers = [
+        {
+          userId: 'TF0001',
+          firstName: 'John, Jr.',
+          lastName: 'Doe',
+          email: 'john@example.com',
+          role: 'Admin',
+          isActive: true,
+          createdAt: new Date('2026-01-01'),
+        },
+      ];
+
+      const findMock = {
+        select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue(mockUsers),
+      };
+
+      jest.spyOn(GetAllUsers, 'find').mockReturnValue(findMock);
+
+      mockReq.query = { format: 'csv' };
+      mockRes.setHeader = jest.fn();
+      mockRes.send = jest.fn();
+
+      await exportUsersApiCall(mockReq, mockRes);
+
+      expect(mockRes.setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv; charset=utf-8');
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.send).toHaveBeenCalledWith(expect.stringContaining('"John, Jr."'));
     });
   });
 });

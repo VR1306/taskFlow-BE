@@ -1,4 +1,9 @@
-import { catchAsync, generateRandomHexToken, escapeRegex } from '../../helpers/helpers.js';
+import {
+  catchAsync,
+  generateRandomHexToken,
+  escapeRegex,
+  serializeCsv,
+} from '../../helpers/helpers.js';
 import { sendWelcomeEmail } from '../../helpers/sendEmail.js';
 import GetAllUsers from '../../models/users/users.model.js';
 
@@ -254,5 +259,81 @@ export const deleteUserApiCall = catchAsync(async (req, res) => {
   return res.status(200).json({
     success: true,
     message: 'User deleted successfully.',
+  });
+});
+
+/**
+ * GET /api/v1/users/export
+ * Export users matching filters to CSV or JSON
+ */
+export const exportUsersApiCall = catchAsync(async (req, res) => {
+  const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+  const role = typeof req.query.role === 'string' ? req.query.role.trim() : '';
+  const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
+  const format =
+    typeof req.query.format === 'string' ? req.query.format.trim().toLowerCase() : 'json';
+
+  const filter = buildUserFilter({ search, role, status });
+  const users = await GetAllUsers.find(filter)
+    .select('-password -passwordResetToken -passwordResetExpires -refreshTokens')
+    .sort({ createdAt: -1 })
+    .lean();
+
+  const formattedUsers = users.map((u) => {
+    const userId = u.userId || (u._id ? String(u._id) : 'N/A');
+    const firstName = u.firstName || '';
+    const lastName = u.lastName || '';
+    const fullName = `${firstName} ${lastName}`.trim();
+    const status = u.isActive !== false ? 'Active' : 'Inactive';
+    const joinedDate = u.createdAt ? new Date(u.createdAt).toISOString().split('T')[0] : 'N/A';
+
+    return {
+      userId,
+      firstName,
+      lastName,
+      fullName,
+      email: u.email || '',
+      role: u.role || 'User',
+      status,
+      isActive: u.isActive !== false,
+      joinedDate,
+      createdAt: u.createdAt,
+    };
+  });
+
+  if (format === 'csv') {
+    const headers = [
+      'User ID',
+      'First Name',
+      'Last Name',
+      'Full Name',
+      'Email',
+      'Role',
+      'Status',
+      'Joined Date',
+    ];
+
+    const rows = formattedUsers.map((u) => [
+      u.userId,
+      u.firstName,
+      u.lastName,
+      u.fullName,
+      u.email,
+      u.role,
+      u.status,
+      u.joinedDate,
+    ]);
+
+    const csvContent = '\uFEFF' + serializeCsv(headers, rows);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename=users-export.csv');
+    return res.status(200).send(csvContent);
+  }
+
+  return res.status(200).json({
+    success: true,
+    message: 'Users exported successfully.',
+    total: formattedUsers.length,
+    data: formattedUsers,
   });
 });

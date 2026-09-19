@@ -136,3 +136,18 @@ export const catchAsync = (fn) => {
     });
   };
 };
+
+export const escapeCsvValue = (str) => {
+  if (str === null || str === undefined) return '';
+  const s = String(str);
+  if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+    return `"${s.replaceAll('"', '""')}"`;
+  }
+  return s;
+};
+
+export const serializeCsv = (headers, rows) => {
+  const headerLine = headers.map(escapeCsvValue).join(',');
+  const rowLines = rows.map((row) => row.map(escapeCsvValue).join(','));
+  return [headerLine, ...rowLines].join('\n');
+};

@@ -5,6 +5,7 @@ import {
   getUserByIdApiCall,
   updateUserApiCall,
   deleteUserApiCall,
+  exportUsersApiCall,
 } from '../../../controllers/users/users.controller.js';
 import { validateUserToken } from '../../../middlewares/protectedApi.middleware.js';
 import { validateRequest } from '../../../middlewares/validateSchema.js';
@@ -19,6 +20,18 @@ const router = Router();
  *   name: Users
  *   description: User Management endpoints
  */
+
+/**
+ * @swagger
+ * /api/v1/users/export:
+ *   get:
+ *     summary: Export Users to CSV or JSON
+ *     description: Retrieve all matching users in CSV or JSON format.
+ *     tags: [Users]
+ *     security:
+ *       - BearerAuth: []
+ */
+router.get('/export', validateUserToken, exportUsersApiCall);
 
 /**
  * @swagger

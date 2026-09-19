@@ -2,6 +2,7 @@ import { jest } from '@jest/globals';
 import mongoose from 'mongoose';
 import connectDb from './database.js';
 import GetAllUsers from '../models/users/users.model.js';
+import Role from '../models/roles/roles.model.js';
 
 describe('Database Connection Module Tests', () => {
   const originalEnv = process.env.MONGO_DB_URL;
@@ -42,6 +43,9 @@ describe('Database Connection Module Tests', () => {
     jest
       .spyOn(GetAllUsers, 'findOne')
       .mockResolvedValue({ email: 'admin@taskflow.com', userId: 'TF0001' });
+    jest.spyOn(Role, 'findOne').mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ name: 'Super Admin' }),
+    });
 
     const conn = await connectDb();
 
@@ -62,6 +66,9 @@ describe('Database Connection Module Tests', () => {
     jest
       .spyOn(GetAllUsers, 'findOne')
       .mockResolvedValue({ email: 'admin@taskflow.com', userId: 'TF0001' });
+    jest.spyOn(Role, 'findOne').mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ name: 'Super Admin' }),
+    });
 
     const conn1 = await connectDb();
     expect(conn1).toStrictEqual(mockMongooseInstance);
@@ -82,6 +89,9 @@ describe('Database Connection Module Tests', () => {
 
     jest.spyOn(mongoose, 'connect').mockResolvedValue(mockMongooseInstance);
     jest.spyOn(GetAllUsers, 'findOne').mockRejectedValue(new Error('Seed query failed'));
+    jest.spyOn(Role, 'findOne').mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ name: 'Super Admin' }),
+    });
     const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     const conn = await connectDb();
