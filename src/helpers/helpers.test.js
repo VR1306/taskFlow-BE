@@ -181,6 +181,51 @@ describe('Backend Helper Functions', () => {
         error: 'Database connection failed',
       });
     });
+
+    it('converts a MongoDB duplicate-key error into a clean 400 instead of a raw 500', async () => {
+      const mockReq = {};
+      const mockRes = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      const mockNext = jest.fn();
+
+      const asyncFn = async () => {
+        const err = new Error(
+          'E11000 duplicate key error collection: taskflow.users index: email_1 dup key: { email: "a@b.com" }'
+        );
+        err.code = 11000;
+        err.keyValue = { email: 'a@b.com' };
+        throw err;
+      };
+
+      const wrappedFn = catchAsync(asyncFn);
+      await wrappedFn(mockReq, mockRes, mockNext);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: false,
+        message: 'Email already exists. Please use a different email.',
+      });
+    });
+
+    it('falls back to a generic duplicate-value message when the conflicting field is unknown', async () => {
+      const mockReq = {};
+      const mockRes = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      const mockNext = jest.fn();
+
+      const asyncFn = async () => {
+        const err = new Error('E11000 duplicate key error');
+        err.code = 11000;
+        throw err;
+      };
+
+      const wrappedFn = catchAsync(asyncFn);
+      await wrappedFn(mockReq, mockRes, mockNext);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: false,
+        message: 'A record with this value already exists.',
+      });
+    });
   });
 
   describe('CSV Export Serialization Helpers', () => {

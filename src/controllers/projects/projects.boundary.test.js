@@ -110,12 +110,16 @@ it.each([
 });
 
 it('deletes projects identified by ObjectId', async () => {
-  const doc = { _id: id, save: jest.fn() };
+  const doc = { _id: id, projectId: 'PRJ0001', name: 'Test', key: 'TST' };
   jest.spyOn(Project, 'findOne').mockResolvedValue(doc);
-  jest.spyOn(Task, 'countDocuments').mockResolvedValue(0);
+  jest.spyOn(Task, 'find').mockReturnValue({
+    select: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue([]),
+  });
+  const deleteOneSpy = jest.spyOn(Project, 'deleteOne').mockResolvedValue({ deletedCount: 1 });
   const res = response();
   await deleteProject({ params: { id } }, res);
-  expect(doc.isDeleted).toBe(true);
+  expect(deleteOneSpy).toHaveBeenCalledWith({ _id: id });
   expect(res.status).toHaveBeenCalledWith(200);
 });
 

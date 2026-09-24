@@ -106,9 +106,13 @@ export const createUserApiCall = catchAsync(async (req, res) => {
     });
   }
 
-  // 3. Check if user already exists (among non-deleted records or active emails)
+  // 3. Check if the email is already taken. The `email` unique index applies to every
+  // document regardless of isDeleted, so a soft-deleted user still blocks this email at
+  // the database layer — this check must match that (not just check non-deleted records),
+  // or a stale/soft-deleted match slips past here and crashes later with a raw E11000
+  // duplicate-key error instead of a clean, actionable message.
   const userExists = await GetAllUsers.findOne({ email }).lean();
-  if (userExists && !userExists.isDeleted) {
+  if (userExists) {
     return res.status(400).json({
       success: false,
       message: 'Email already exists. Please use a different email.',
@@ -229,12 +233,14 @@ export const updateUserApiCall = catchAsync(async (req, res) => {
     });
   }
 
-  // Check email uniqueness if email is changed
+  // Check email uniqueness if email is changed. Deliberately not scoped to non-deleted
+  // records: the `email` unique index applies to every document regardless of isDeleted,
+  // so a soft-deleted user still blocks this email at the database layer (see the same
+  // note in createUserApiCall).
   if (email && email !== user.email) {
     const emailConflict = await GetAllUsers.findOne({
       email,
       _id: { $ne: id },
-      isDeleted: { $ne: true },
     }).lean();
 
     if (emailConflict) {

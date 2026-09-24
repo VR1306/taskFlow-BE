@@ -9,6 +9,7 @@ import {
   changePasswordFunction,
 } from './auth.controller.js';
 import GetAllUsers from '../../models/users/users.model.js';
+import Role from '../../models/roles/roles.model.js';
 import { generateRefreshToken, hashToken } from '../../helpers/helpers.js';
 
 describe('Auth Controller Tests', () => {
@@ -77,7 +78,7 @@ describe('Auth Controller Tests', () => {
       });
     });
 
-    it('returns 200 with tokens, defaultModule: users, and user data on valid login', async () => {
+    it('returns 200 with tokens and user data on valid login', async () => {
       const mockUser = {
         _id: '507f1f77bcf86cd799439011',
         firstName: 'Jane',
@@ -102,8 +103,6 @@ describe('Auth Controller Tests', () => {
         expect.objectContaining({
           success: true,
           message: 'Sign-in successful!',
-          defaultModule: 'users',
-          redirectUrl: '/users',
           rememberMe: false,
           token: expect.any(String),
           accessToken: expect.any(String),
@@ -151,6 +150,43 @@ describe('Auth Controller Tests', () => {
         expect.objectContaining({
           success: true,
           rememberMe: true,
+        })
+      );
+    });
+
+    it("includes the role's resolved permissions on the user object, so the frontend sidebar/route guards can gate modules without a separate lookup", async () => {
+      const mockUser = {
+        _id: '507f1f77bcf86cd799439011',
+        firstName: 'Rithika',
+        lastName: 'Suresh',
+        email: 'rithika@example.com',
+        role: 'QA',
+        refreshTokens: [],
+        comparePassword: jest.fn().mockResolvedValue(true),
+        save: jest.fn().mockResolvedValue(true),
+      };
+
+      jest.spyOn(GetAllUsers, 'findOne').mockResolvedValue(mockUser);
+      jest.spyOn(Role, 'findOne').mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          name: 'QA',
+          permissions: ['projects.view', 'tasks.view', 'tasks.create', 'tasks.edit'],
+        }),
+      });
+
+      const req = { body: { email: 'rithika@example.com', password: 'CorrectPassword@123' } };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      const next = jest.fn();
+
+      await signInUserApiCall(req, res, next);
+
+      expect(Role.findOne).toHaveBeenCalledWith({ name: 'QA', isDeleted: { $ne: true } });
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user: expect.objectContaining({
+            role: 'QA',
+            permissions: ['projects.view', 'tasks.view', 'tasks.create', 'tasks.edit'],
+          }),
         })
       );
     });

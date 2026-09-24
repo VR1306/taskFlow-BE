@@ -13,10 +13,29 @@ import {
 const MEMBER_POPULATE_FIELDS = 'userId firstName lastName email role profilePic isActive';
 
 /**
+ * Taskflow Admin accounts administer the workspace and are never assignable as a project
+ * lead or member — mirrors the exclusion already applied in getProjectMemberCandidates,
+ * enforced here too as a server-side guard against direct API calls that bypass the UI.
+ */
+async function findAdminAssignee(userIds) {
+  const ids = [...new Set((userIds || []).filter(Boolean).map(String))];
+  if (ids.length === 0) return null;
+  const admins = await GetAllUsers.find({ _id: { $in: ids }, role: 'Taskflow Admin' })
+    .select('firstName lastName')
+    .lean();
+  return admins[0] || null;
+}
+
+/**
  * Emails every given member their project assignment (project name + role), looking up
  * each user's name/email/role. The project lead is labeled "Project Lead"; everyone
  * else is labeled with their account role. Failures are logged, not thrown, so a mail
  * outage never blocks the project create/update response.
+ *
+ * Sent one at a time (not Promise.all): opening several SMTP connections to Gmail at
+ * once gets the later ones throttled/rejected, so a parallel fan-out silently delivers
+ * only the first email (typically the lead's) and drops the rest with no visible error
+ * (see notifyUsers in notification.helper.js for the same fan-out-serialization fix).
  */
 async function emailAssignedMembers({ memberIds, leadId, projectName }) {
   if (!Array.isArray(memberIds) || memberIds.length === 0) return;
@@ -28,29 +47,52 @@ async function emailAssignedMembers({ memberIds, leadId, projectName }) {
     .select('firstName lastName email role')
     .lean();
 
-  await Promise.all(
-    users.map((user) => {
-      const roleLabel =
-        leadId && String(user._id) === String(leadId) ? 'Project Lead' : user.role || 'Team Member';
-      return sendProjectAssignmentEmail({
+  for (const user of users) {
+    const roleLabel =
+      leadId && String(user._id) === String(leadId) ? 'Project Lead' : user.role || 'Team Member';
+    try {
+      await sendProjectAssignmentEmail({
         name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
         email: user.email,
         projectName,
         role: roleLabel,
-      }).catch((error) => {
-        console.error(`Project assignment email failed for ${user.email}:`, error.message);
       });
-    })
-  );
+    } catch (error) {
+      console.error(`Project assignment email failed for ${user.email}:`, error.message);
+    }
+  }
 }
 
-export const buildProjectFilter = ({ search, status }) => {
+/**
+ * Builds the query filter for listing projects. Every user — including Taskflow Admin —
+ * only sees projects they lead, are a member of, or created; there is no role-based
+ * bypass here (unlike the notification feed, which does give Admin an unrestricted
+ * global view). The createdBy clause matters most for Taskflow Admin, who can never be
+ * assigned as a lead or member (see findAdminAssignee) but should still be able to see
+ * projects they personally created.
+ */
+export const buildProjectFilter = ({ search, status, user }) => {
   const filter = { isDeleted: { $ne: true } };
+
+  if (user) {
+    const userId = user._id || user.id;
+    filter.$or = [{ leadId: userId }, { members: userId }, { createdBy: userId }];
+  }
 
   if (typeof search === 'string' && search.trim().length > 0) {
     const escapedSearch = escapeRegex(search.trim());
     const searchRegex = new RegExp(escapedSearch, 'i');
-    filter.$or = [{ name: searchRegex }, { key: searchRegex }, { description: searchRegex }];
+    const searchConditions = [
+      { name: searchRegex },
+      { key: searchRegex },
+      { description: searchRegex },
+    ];
+    if (filter.$or) {
+      filter.$and = [{ $or: filter.$or }, { $or: searchConditions }];
+      delete filter.$or;
+    } else {
+      filter.$or = searchConditions;
+    }
   }
 
   if (
@@ -122,7 +164,7 @@ export const getAllProjects = catchAsync(async (req, res) => {
   const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
   const skip = (page - 1) * limit;
 
-  const filter = buildProjectFilter({ search, status });
+  const filter = buildProjectFilter({ search, status, user: req.user });
 
   const [projects, totalProjects] = await Promise.all([
     Project.find(filter)
@@ -244,12 +286,25 @@ export const createProject = catchAsync(async (req, res) => {
   );
   if (resolvedLeadId) memberSet.add(String(resolvedLeadId));
 
+  // Guards both an explicitly chosen admin lead/member and the implicit fallback below
+  // (a Taskflow Admin creating a project without picking a lead would otherwise default
+  // to themselves).
+  const adminAssignee = await findAdminAssignee([...memberSet]);
+  if (adminAssignee) {
+    return res.status(400).json({
+      success: false,
+      message:
+        'Taskflow Admin accounts cannot be assigned as a project lead or member. Please choose a different lead.',
+    });
+  }
+
   const newProject = await Project.create({
     name: name.trim(),
     key: projectKey,
     description: description ? description.trim() : '',
     leadId: resolvedLeadId,
     members: [...memberSet],
+    createdBy: req.user?._id || null,
     status: PROJECT_STATUSES.includes(req.body.status) ? req.body.status : PROJECT_DEFAULT_STATUS,
     isDeleted: false,
   });
@@ -330,13 +385,31 @@ export const updateProject = catchAsync(async (req, res) => {
 
   if (description !== undefined) project.description = String(description).trim();
   if (status && PROJECT_STATUSES.includes(status)) project.status = status;
-  if (leadId && mongoose.Types.ObjectId.isValid(leadId)) project.leadId = leadId;
+  if (leadId && mongoose.Types.ObjectId.isValid(leadId)) {
+    const adminLead = await findAdminAssignee([leadId]);
+    if (adminLead) {
+      return res.status(400).json({
+        success: false,
+        message: 'Taskflow Admin accounts cannot be assigned as a project lead.',
+      });
+    }
+    project.leadId = leadId;
+  }
 
   let addedMemberIds = [];
   let removedMemberIds = [];
   if (Array.isArray(memberIds)) {
     const memberSet = new Set(memberIds.filter((id) => mongoose.Types.ObjectId.isValid(id)));
     if (project.leadId) memberSet.add(String(project.leadId));
+
+    const adminAssignee = await findAdminAssignee([...memberSet]);
+    if (adminAssignee) {
+      return res.status(400).json({
+        success: false,
+        message: 'Taskflow Admin accounts cannot be assigned as a project member.',
+      });
+    }
+
     project.members = [...memberSet];
 
     const currentMemberIds = new Set([...memberSet].map(String));
@@ -395,7 +468,12 @@ export const updateProject = catchAsync(async (req, res) => {
 
 /**
  * DELETE /api/v1/projects/:id
- * Soft delete a project (blocked while it still has active tasks)
+ * Permanently (hard) deletes a project — unlike PUT .../status:'archived', which is the
+ * reversible alternative that keeps the project and its tasks intact but out of the
+ * default active view. Deleting cascades: every active task under the project is
+ * soft-deleted (matching the same convention a standalone task delete already uses) and
+ * each task's assignee/reporter gets their own "Task Deleted" notification, before the
+ * project document itself is removed and its members are notified.
  */
 export const deleteProject = catchAsync(async (req, res) => {
   const project = await Project.findOne(
@@ -411,50 +489,68 @@ export const deleteProject = catchAsync(async (req, res) => {
     });
   }
 
-  const activeTaskCount = await Task.countDocuments({
+  const affectedTasks = await Task.find({
     projectId: project._id,
     isDeleted: { $ne: true },
-  });
+  })
+    .select('assigneeId reporterId title taskKey')
+    .lean();
 
-  if (activeTaskCount > 0) {
-    return res.status(400).json({
-      success: false,
-      message: `Cannot delete project: ${activeTaskCount} active task(s) exist. Please delete or move them first.`,
-    });
+  if (affectedTasks.length > 0) {
+    await Task.updateMany(
+      { _id: { $in: affectedTasks.map((task) => task._id) } },
+      { isDeleted: true, deletedAt: new Date() }
+    );
+
+    for (const task of affectedTasks) {
+      await notifyUsers({
+        recipientIds: [task.assigneeId, task.reporterId],
+        actor: req.user,
+        type: 'task_deleted',
+        title: 'Task Deleted',
+        message: `${task.taskKey}: ${task.title} was deleted because its project "${project.name}" was deleted.`,
+        metadata: { taskId: task._id, taskKey: task.taskKey, projectId: project._id },
+      });
+    }
   }
 
   const affectedMemberIds = [
     ...new Set([...(project.members || []), project.leadId].filter(Boolean).map(String)),
   ];
+  const { name: projectName, key: projectKey, _id: projectMongoId, projectId } = project;
 
-  project.isDeleted = true;
-  project.deletedAt = new Date();
-  await project.save();
+  await Project.deleteOne({ _id: project._id });
 
   // Notified directly by recipientId (rather than relying on project-membership
-  // scoping) since the project is no longer active/queryable for its former members.
+  // scoping) since the project no longer exists for its former members to be scoped by.
   await notifyUsers({
     recipientIds: affectedMemberIds,
     actor: req.user,
     type: 'project_deleted',
     title: 'Project Deleted',
-    message: `Project "${project.name}" (${project.key}) was deleted.`,
-    metadata: { projectId: project._id, projectKey: project.key },
+    message: `Project "${projectName}" (${projectKey}) was deleted.`,
+    metadata: { projectId: projectMongoId, projectKey },
   });
 
   return res.status(200).json({
     success: true,
     message: 'Project deleted successfully.',
-    data: { id: project._id, projectId: project.projectId },
+    data: { id: projectMongoId, projectId },
   });
 });
 
 /**
  * GET /api/v1/projects/:id/members/candidates
- * Retrieve active users eligible to be added as project members
+ * Retrieve active users eligible to be added as project members. Taskflow Admin accounts
+ * are excluded — they administer the workspace and are never assignable as a project
+ * lead or member (see the same rule enforced in createProject/updateProject).
  */
 export const getProjectMemberCandidates = catchAsync(async (req, res) => {
-  const users = await GetAllUsers.find({ isDeleted: { $ne: true }, isActive: { $ne: false } })
+  const users = await GetAllUsers.find({
+    isDeleted: { $ne: true },
+    isActive: { $ne: false },
+    role: { $ne: 'Taskflow Admin' },
+  })
     .select(MEMBER_POPULATE_FIELDS)
     .sort({ firstName: 1 })
     .lean();

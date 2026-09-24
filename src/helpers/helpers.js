@@ -127,6 +127,20 @@ export const isOriginAllowed = (origin) => {
 export const catchAsync = (fn) => {
   return (req, res, next) => {
     return fn(req, res, next).catch((err) => {
+      // A MongoDB unique-index violation (e.g. two requests racing past an application-level
+      // "already exists" check, or a check that doesn't fully match the index) should read as
+      // a normal validation failure, not leak a raw driver error behind a 500.
+      if (err?.code === 11000) {
+        const field = Object.keys(err.keyValue || {})[0];
+        const label = field ? field.charAt(0).toUpperCase() + field.slice(1) : 'Value';
+        return res.status(400).json({
+          success: false,
+          message: field
+            ? `${label} already exists. Please use a different ${field}.`
+            : 'A record with this value already exists.',
+        });
+      }
+
       // Automatically forwards the error to your global Express error handler
       return res.status(500).json({
         success: false,

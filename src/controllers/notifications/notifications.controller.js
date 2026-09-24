@@ -51,11 +51,22 @@ export const buildNotificationFilter = async ({ user, search, type, unreadOnly =
 
     // Non-admins see: notifications addressed to them personally; broadcasts ('All' or
     // their role) that aren't tied to any project; or project-scoped broadcasts for a
-    // project they actually belong to.
+    // project they actually belong to. Broadcast clauses are restricted to documents with
+    // no specific recipientId — otherwise a directed, single-recipient notification (which
+    // still carries the default targetRole: 'All') would match for every user instead of
+    // just the person it was actually addressed to.
     filter.$or = [
       { recipientId: userId },
-      { targetRole: { $in: ['All', userRole] }, 'metadata.projectId': { $exists: false } },
-      { targetRole: { $in: ['All', userRole] }, 'metadata.projectId': { $in: memberProjectIds } },
+      {
+        recipientId: null,
+        targetRole: { $in: ['All', userRole] },
+        'metadata.projectId': { $exists: false },
+      },
+      {
+        recipientId: null,
+        targetRole: { $in: ['All', userRole] },
+        'metadata.projectId': { $in: memberProjectIds },
+      },
     ];
   }
   // Taskflow Admin sees the full global notification feed (no additional scoping)

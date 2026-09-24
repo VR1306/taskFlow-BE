@@ -8,6 +8,7 @@ import {
   catchAsync,
 } from '../../helpers/helpers.js';
 import { sendPasswordResetEmail } from '../../helpers/sendEmail.js';
+import { getPermissionsForRole } from '../../helpers/permissions.helper.js';
 import GetAllUsers from '../../models/users/users.model.js';
 
 const RESET_TOKEN_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
@@ -43,6 +44,11 @@ export const signInUserApiCall = catchAsync(async (req, res) => {
   }
   await user.save({ validateBeforeSave: false });
 
+  // The frontend sidebar/route guards decide what a user can see purely from this
+  // permissions list — without it every non-Admin role falls back to an empty array
+  // and only sees modules with no permission requirement at all.
+  const permissions = await getPermissionsForRole(user.role);
+
   return res.status(200).json({
     success: true,
     message: 'Sign-in successful!',
@@ -50,14 +56,13 @@ export const signInUserApiCall = catchAsync(async (req, res) => {
     accessToken,
     refreshToken,
     rememberMe: isRememberMe,
-    defaultModule: 'users',
-    redirectUrl: '/users',
     user: {
       id: user._id.toString(),
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
       role: user.role,
+      permissions,
     },
   });
 });

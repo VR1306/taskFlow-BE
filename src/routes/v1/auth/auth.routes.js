@@ -79,12 +79,6 @@ const router = Router();
  *                 rememberMe:
  *                   type: boolean
  *                   example: true
- *                 defaultModule:
- *                   type: string
- *                   example: users
- *                 redirectUrl:
- *                   type: string
- *                   example: /users
  *                 user:
  *                   type: object
  *                   properties:
@@ -98,6 +92,11 @@ const router = Router();
  *                       type: string
  *                     role:
  *                       type: string
+ *                     permissions:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       description: Permission IDs granted to the user's role, used by the frontend to decide which modules to show and to land the user on the first one they can access.
  *       400:
  *         description: Email and password required or invalid payload
  *       401:

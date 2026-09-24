@@ -61,6 +61,7 @@ describe('Notifications Controller', () => {
         expect.arrayContaining([
           { recipientId: pmUser._id },
           {
+            recipientId: null,
             targetRole: { $in: ['All', 'Project Manager'] },
             'metadata.projectId': { $exists: false },
           },
@@ -79,7 +80,11 @@ describe('Notifications Controller', () => {
       expect(filter.$or).toEqual(
         expect.arrayContaining([
           { recipientId: devUser._id },
-          { targetRole: { $in: ['All', 'Developer'] }, 'metadata.projectId': { $exists: false } },
+          {
+            recipientId: null,
+            targetRole: { $in: ['All', 'Developer'] },
+            'metadata.projectId': { $exists: false },
+          },
         ])
       );
     });
@@ -102,6 +107,7 @@ describe('Notifications Controller', () => {
       expect(filter.$or).toEqual(
         expect.arrayContaining([
           {
+            recipientId: null,
             targetRole: { $in: ['All', 'Developer'] },
             'metadata.projectId': { $in: ['proj-1', 'proj-2'] },
           },

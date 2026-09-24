@@ -61,6 +61,15 @@ const projectSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    // Whoever actually created the project — tracked separately from leadId/members
+    // because a Taskflow Admin can create a project but (by design) can never be
+    // assigned as its lead or a member, so this is how they keep visibility into it.
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'GetAllUsers',
+      default: null,
+      index: true,
+    },
     members: [
       {
         type: mongoose.Schema.Types.ObjectId,

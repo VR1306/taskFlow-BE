@@ -297,6 +297,31 @@ describe('Users Controller', () => {
       });
     });
 
+    it('returns 400 when the email belongs to a soft-deleted user, since the unique index blocks it regardless of isDeleted', async () => {
+      mockReq.body = {
+        firstName: 'New',
+        lastName: 'User',
+        email: 'deleted@example.com',
+        role: 'User',
+      };
+
+      jest.spyOn(GetAllUsers, 'findOne').mockReturnValue({
+        lean: jest
+          .fn()
+          .mockResolvedValue({ _id: 'user-1', email: 'deleted@example.com', isDeleted: true }),
+      });
+      const createSpy = jest.spyOn(GetAllUsers, 'create');
+
+      await createUserApiCall(mockReq, mockRes);
+
+      expect(createSpy).not.toHaveBeenCalled();
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: false,
+        message: 'Email already exists. Please use a different email.',
+      });
+    });
+
     it('creates new user and sends welcome email successfully', async () => {
       mockReq.body = {
         firstName: 'New',
@@ -517,6 +542,39 @@ describe('Users Controller', () => {
 
       await updateUserApiCall(mockReq, mockRes);
 
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: false,
+        message: 'Email is already in use by another member.',
+      });
+    });
+
+    it('returns 400 when updating email to one held by a soft-deleted user, since the unique index blocks it regardless of isDeleted', async () => {
+      mockReq.params = { id: 'user-123' };
+      mockReq.body = { email: 'conflict@example.com' };
+
+      const mockUserDoc = {
+        _id: 'user-123',
+        email: 'old@example.com',
+        role: 'User',
+      };
+
+      jest
+        .spyOn(GetAllUsers, 'findOne')
+        .mockResolvedValueOnce(mockUserDoc) // find target user
+        .mockReturnValueOnce({
+          lean: jest
+            .fn()
+            .mockResolvedValue({
+              _id: 'other-user',
+              email: 'conflict@example.com',
+              isDeleted: true,
+            }),
+        }); // email conflict check finds the soft-deleted holder
+
+      await updateUserApiCall(mockReq, mockRes);
+
+      expect(mockUserDoc.email).toBe('old@example.com');
       expect(mockRes.status).toHaveBeenCalledWith(400);
       expect(mockRes.json).toHaveBeenCalledWith({
         success: false,
