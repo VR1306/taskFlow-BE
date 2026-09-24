@@ -97,4 +97,18 @@ describe('Validate Schema Middleware', () => {
     middleware(mockReq, mockRes, mockNext);
     expect(mockNext).toHaveBeenCalled();
   });
+  it('reports model construction errors without calling next', () => {
+    const schema = jest.fn(function () {
+      throw new Error('Invalid model input');
+    });
+    validateRequest(schema)(mockReq, mockRes, mockNext);
+    expect(mockRes.status).toHaveBeenCalledWith(400);
+    expect(mockRes.json).toHaveBeenCalledWith({ success: false, errors: ['Invalid model input'] });
+    expect(mockNext).not.toHaveBeenCalled();
+  });
+
+  it('continues when passed a schema with no validator', () => {
+    validateRequest({})(mockReq, mockRes, mockNext);
+    expect(mockNext).toHaveBeenCalledTimes(1);
+  });
 });

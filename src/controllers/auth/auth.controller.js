@@ -20,6 +20,7 @@ export const signInUserApiCall = catchAsync(async (req, res) => {
   }
 
   const user = await GetAllUsers.findOne({ email });
+
   if (!user) {
     return res.status(404).json({ success: false, message: 'User not found' });
   }

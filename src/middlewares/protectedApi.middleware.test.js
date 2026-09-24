@@ -109,4 +109,17 @@ describe('validateUserToken Middleware', () => {
     expect(next).toHaveBeenCalledTimes(1);
     expect(res.status).not.toHaveBeenCalled();
   });
+  it('rejects malformed credentials with the legacy JWT secret', async () => {
+    const previous = process.env.JWT_ACCESS_SECRET;
+    delete process.env.JWT_ACCESS_SECRET;
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    try {
+      await validateUserToken({ headers: { authorization: 'Bearer invalid' } }, res, jest.fn());
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'INVALID_TOKEN', message: 'Invalid token. Access denied.' })
+      );
+    } finally {
+      process.env.JWT_ACCESS_SECRET = previous;
+    }
+  });
 });

@@ -1,36 +1,20 @@
 import GetAllUsers from '../../models/users/users.model.js';
 import Role from '../../models/roles/roles.model.js';
-import { ALL_PERMISSION_IDS } from '../../constants/permissions/permissions.constants.js';
-
-const ROLE_PALETTE = {
-  SuperAdmin: '#6366f1',
-  'Super Admin': '#6366f1',
-  Admin: '#3b82f6',
-  Manager: '#06b6d4',
-  User: '#10b981',
-  Guest: '#f59e0b',
-  Custom: '#8b5cf6',
-};
-
-const MONTH_NAMES = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-];
+import Project from '../../models/projects/projects.model.js';
+import Task from '../../models/tasks/tasks.model.js';
+import {
+  ALL_PERMISSION_IDS,
+  ROLE_PALETTE,
+  MONTH_NAMES,
+  TASK_STATUSES,
+} from '../../constants/permissions/permissions.constants.js';
 
 export const getDashboardStats = async (req, res) => {
   try {
     const now = new Date();
     const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+
+    const userBaseMatch = { isDeleted: { $ne: true } };
 
     const [
       totalUsers,
@@ -44,23 +28,26 @@ export const getDashboardStats = async (req, res) => {
       registrationTrendsRaw,
       recentUsersRaw,
       rolesListRaw,
+      totalProjects,
+      totalTasks,
+      tasksByStatusRaw,
     ] = await Promise.all([
-      GetAllUsers.countDocuments({ isDeleted: { $ne: true } }),
-      GetAllUsers.countDocuments({ isDeleted: { $ne: true }, isActive: true }),
-      GetAllUsers.countDocuments({ isDeleted: { $ne: true }, isActive: false }),
+      GetAllUsers.countDocuments(userBaseMatch),
+      GetAllUsers.countDocuments({ ...userBaseMatch, isActive: true }),
+      GetAllUsers.countDocuments({ ...userBaseMatch, isActive: false }),
       Role.countDocuments({ isDeleted: { $ne: true } }),
       Role.countDocuments({ isDeleted: { $ne: true }, isSystem: true }),
       Role.countDocuments({ isDeleted: { $ne: true }, isSystem: false }),
       Role.countDocuments({ isDeleted: { $ne: true }, isActive: true }),
       GetAllUsers.aggregate([
-        { $match: { isDeleted: { $ne: true } } },
+        { $match: userBaseMatch },
         { $group: { _id: '$role', count: { $sum: 1 } } },
         { $sort: { count: -1 } },
       ]),
       GetAllUsers.aggregate([
         {
           $match: {
-            isDeleted: { $ne: true },
+            ...userBaseMatch,
             createdAt: { $gte: sixMonthsAgo },
           },
         },
@@ -75,7 +62,7 @@ export const getDashboardStats = async (req, res) => {
         },
         { $sort: { '_id.year': 1, '_id.month': 1 } },
       ]),
-      GetAllUsers.find({ isDeleted: { $ne: true } })
+      GetAllUsers.find(userBaseMatch)
         .sort({ createdAt: -1 })
         .limit(5)
         .select('userId firstName lastName email role isActive createdAt')
@@ -84,6 +71,12 @@ export const getDashboardStats = async (req, res) => {
         .sort({ createdAt: -1 })
         .select('roleId name roleType permissions isSystem isActive createdAt')
         .lean(),
+      Project.countDocuments({ isDeleted: { $ne: true } }),
+      Task.countDocuments({ isDeleted: { $ne: true } }),
+      Task.aggregate([
+        { $match: { isDeleted: { $ne: true } } },
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]),
     ]);
 
     // Format Users by Role
@@ -153,10 +146,10 @@ export const getDashboardStats = async (req, res) => {
       });
     }
 
-    // If total users exist but no recent registrations matched the date range (e.g. seeded data in past)
+    // If total users exist but no recent registrations matched the date range
     const totalTrendSum = userRegistrationTrends.reduce((acc, t) => acc + t.count, 0);
     if (totalTrendSum === 0 && totalUsers > 0) {
-      userRegistrationTrends[userRegistrationTrends.length - 1].count = totalUsers;
+      userRegistrationTrends.at(-1).count = totalUsers;
     }
 
     // Role Permissions & User Assignment Distribution
@@ -180,6 +173,24 @@ export const getDashboardStats = async (req, res) => {
       isActive: Boolean(u.isActive),
       createdAt: u.createdAt,
     }));
+
+    // Format Tasks by Status (guaranteeing every board column is represented)
+    const taskStatusCountMap = new Map(tasksByStatusRaw.map((item) => [item._id, item.count]));
+    const taskStatusColors = {
+      Todo: '#94a3b8',
+      'In Progress': '#3b82f6',
+      'In Review': '#f59e0b',
+      Done: '#10b981',
+    };
+    const tasksByStatus = TASK_STATUSES.map((status) => {
+      const count = taskStatusCountMap.get(status) || 0;
+      return {
+        status,
+        count,
+        percentage: totalTasks > 0 ? Number(((count / totalTasks) * 100).toFixed(1)) : 0,
+        color: taskStatusColors[status],
+      };
+    });
 
     // Recent Roles
     const recentRoles = rolesListRaw.slice(0, 5).map((r) => ({
@@ -205,10 +216,13 @@ export const getDashboardStats = async (req, res) => {
           customRoles,
           activeRoles,
           totalPermissions: ALL_PERMISSION_IDS.length,
+          totalProjects,
+          totalTasks,
         },
         usersByRole,
         usersByStatus,
         rolesByType,
+        tasksByStatus,
         userRegistrationTrends,
         rolePermissionsDistribution,
         recentUsers,

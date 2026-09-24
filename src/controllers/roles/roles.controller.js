@@ -2,7 +2,10 @@ import mongoose from 'mongoose';
 import { catchAsync, escapeRegex, serializeCsv } from '../../helpers/helpers.js';
 import Role, { getNextRoleId } from '../../models/roles/roles.model.js';
 import GetAllUsers from '../../models/users/users.model.js';
-import { SYSTEM_PERMISSIONS_CATALOGUE } from '../../constants/permissions/permissions.constants.js';
+import {
+  SYSTEM_PERMISSIONS_CATALOGUE,
+  ROLES_CSV_EXPORT_HEADERS,
+} from '../../constants/permissions/permissions.constants.js';
 
 export const buildRoleFilter = ({ search, roleType, status }) => {
   const filter = { isDeleted: { $ne: true } };
@@ -60,7 +63,7 @@ export const applyRoleProperties = (
   if (typeof description === 'string') role.description = description.trim();
   if (typeof roleType === 'string' && !role.isSystem) role.roleType = roleType.trim();
   if (Array.isArray(permissions)) role.permissions = permissions;
-  if (typeof isActive === 'boolean' && role.name !== 'Super Admin') role.isActive = isActive;
+  if (typeof isActive === 'boolean' && role.name !== 'Taskflow Admin') role.isActive = isActive;
 };
 
 export const findActiveRole = (idParam, { lean = false } = {}) => {
@@ -204,10 +207,10 @@ export const updateRole = catchAsync(async (req, res) => {
     }
   }
 
-  if (role.isSystem && role.name === 'Super Admin' && isActive === false) {
+  if (role.isSystem && role.name === 'Taskflow Admin' && isActive === false) {
     return res.status(400).json({
       success: false,
-      message: 'Super Admin role cannot be deactivated.',
+      message: 'Taskflow Admin role cannot be deactivated.',
     });
   }
 
@@ -235,7 +238,7 @@ export const deleteRole = catchAsync(async (req, res) => {
     });
   }
 
-  if (role.isSystem || role.name === 'Super Admin') {
+  if (role.isSystem || role.name === 'Taskflow Admin') {
     return res.status(400).json({
       success: false,
       message: 'Deletion prohibited: System protected roles cannot be deleted.',
@@ -310,17 +313,7 @@ export const exportRoles = catchAsync(async (req, res) => {
   });
 
   if (format === 'csv') {
-    const headers = [
-      'Role ID',
-      'Role Name',
-      'Description',
-      'Role Type',
-      'Permissions Count',
-      'Granted Permissions',
-      'Status',
-      'System Protected',
-      'Created Date',
-    ];
+    const headers = ROLES_CSV_EXPORT_HEADERS;
 
     const rows = formattedRoles.map((r) => [
       r.roleId,

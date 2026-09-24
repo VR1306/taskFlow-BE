@@ -84,7 +84,7 @@ const roleSchema = new mongoose.Schema(
 // Prevent deletion of system roles via query middleware
 roleSchema.pre(['deleteOne', 'findOneAndDelete', 'deleteMany'], async function () {
   const docToDelete = await this.model.findOne(this.getQuery());
-  if (docToDelete?.isSystem || docToDelete?.name === 'Super Admin') {
+  if (docToDelete?.isSystem || docToDelete?.name === 'Taskflow Admin') {
     throw new Error('Deletion prohibited: System protected roles cannot be deleted.');
   }
 });

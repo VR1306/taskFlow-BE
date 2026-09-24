@@ -9,6 +9,7 @@ import {
 } from '../../../controllers/users/users.controller.js';
 import { validateUserToken } from '../../../middlewares/protectedApi.middleware.js';
 import { validateRequest } from '../../../middlewares/validateSchema.js';
+import { requirePermission } from '../../../helpers/permissions.helper.js';
 import createUserValidationSchema from '../../../models/users/createUsers.model.js';
 import updateUserValidationSchema from '../../../models/users/updateUsers.model.js';
 
@@ -31,7 +32,7 @@ const router = Router();
  *     security:
  *       - BearerAuth: []
  */
-router.get('/export', validateUserToken, exportUsersApiCall);
+router.get('/export', validateUserToken, requirePermission('users.view'), exportUsersApiCall);
 
 /**
  * @swagger
@@ -64,7 +65,7 @@ router.get('/export', validateUserToken, exportUsersApiCall);
  *         name: role
  *         schema:
  *           type: string
- *           enum: [SuperAdmin, Admin, Manager, User, all]
+ *           enum: [Taskflow Admin, Project Manager, Developer, QA, all]
  *         description: Filter users by role
  *       - in: query
  *         name: status
@@ -78,7 +79,7 @@ router.get('/export', validateUserToken, exportUsersApiCall);
  *       401:
  *         description: Unauthorized
  */
-router.get('/getAllUsers', validateUserToken, getAllUsers);
+router.get('/getAllUsers', validateUserToken, requirePermission('users.view'), getAllUsers);
 
 /**
  * @swagger
@@ -108,7 +109,7 @@ router.get('/getAllUsers', validateUserToken, getAllUsers);
  *                 type: string
  *               role:
  *                 type: string
- *                 enum: [User, Admin, SuperAdmin]
+ *                 enum: [Developer, QA, Project Manager, Taskflow Admin]
  *     responses:
  *       201:
  *         description: User created successfully
@@ -120,6 +121,7 @@ router.get('/getAllUsers', validateUserToken, getAllUsers);
 router.post(
   '/createUser',
   validateUserToken,
+  requirePermission('users.create'),
   validateRequest(createUserValidationSchema),
   createUserApiCall
 );
@@ -146,7 +148,12 @@ router.post(
  *       404:
  *         description: User not found
  */
-router.get('/getUserById/:id', validateUserToken, getUserByIdApiCall);
+router.get(
+  '/getUserById/:id',
+  validateUserToken,
+  requirePermission('users.view'),
+  getUserByIdApiCall
+);
 
 /**
  * @swagger
@@ -188,6 +195,7 @@ router.get('/getUserById/:id', validateUserToken, getUserByIdApiCall);
 router.put(
   '/updateUser/:id',
   validateUserToken,
+  requirePermission('users.edit'),
   validateRequest(updateUserValidationSchema),
   updateUserApiCall
 );
@@ -216,6 +224,11 @@ router.put(
  *       404:
  *         description: User not found
  */
-router.delete('/deleteUser/:id', validateUserToken, deleteUserApiCall);
+router.delete(
+  '/deleteUser/:id',
+  validateUserToken,
+  requirePermission('users.delete'),
+  deleteUserApiCall
+);
 
 export default router;

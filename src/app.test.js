@@ -99,4 +99,48 @@ describe('Express App Route & Middleware Tests', () => {
     });
     expect(res.status).toBe(204);
   });
+  it('reports a failed health check when the database cannot reconnect', async () => {
+    const mongoUri = process.env.MONGO_DB_URL;
+    delete process.env.MONGO_DB_URL;
+    mongoose.connection.readyState = 0;
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const response = await fetch(`${baseUrl}/health`);
+      expect(response.status).toBe(503);
+      expect(await response.json()).toMatchObject({
+        status: 'unhealthy',
+        database: { status: 'disconnected' },
+      });
+    } finally {
+      mongoose.connection.readyState = 1;
+      if (mongoUri === undefined) delete process.env.MONGO_DB_URL;
+      else process.env.MONGO_DB_URL = mongoUri;
+    }
+  });
+
+  it('returns a database error before serving API requests when connection fails', async () => {
+    const mongoUri = process.env.MONGO_DB_URL;
+    delete process.env.MONGO_DB_URL;
+    mongoose.connection.readyState = 0;
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const response = await fetch(`${baseUrl}/api/v1/users/getAllUsers`);
+      expect(response.status).toBe(500);
+      expect(await response.json()).toMatchObject({
+        success: false,
+        message: 'Internal Database Server Error',
+      });
+    } finally {
+      mongoose.connection.readyState = 1;
+      if (mongoUri === undefined) delete process.env.MONGO_DB_URL;
+      else process.env.MONGO_DB_URL = mongoUri;
+    }
+  });
+  it('does not grant cross-origin access to an untrusted origin', async () => {
+    const response = await fetch(`${baseUrl}/`, {
+      headers: { Origin: 'https://untrusted.example' },
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('access-control-allow-origin')).toBeNull();
+  });
 });

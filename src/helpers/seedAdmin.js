@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import GetAllUsers from '../models/users/users.model.js';
 
 export const SEED_USERS = [
@@ -7,20 +8,31 @@ export const SEED_USERS = [
     lastName: 'K',
     email: 'vijayaraghavan130699@gmail.com',
     password: process.env.SUPER_ADMIN_PASSWORD || 'SuperAdmin@123',
-    role: 'SuperAdmin',
+    role: 'Taskflow Admin',
   },
   {
     userId: 'TF0002',
-    firstName: 'Test',
-    lastName: 'User',
+    firstName: 'Alex',
+    lastName: 'Morgan',
+    email: 'admin@taskflow.com',
+    password: process.env.ADMIN_PASSWORD || 'Admin@123',
+    role: 'Project Manager',
+  },
+  {
+    userId: 'TF0003',
+    firstName: 'Sarah',
+    lastName: 'Connor',
     email: 'testuser@taskflow.com',
     password: process.env.TEST_USER_PASSWORD || 'TestUser@123',
-    role: 'User',
+    role: 'Developer',
   },
 ];
 
 export const seedSuperAdmin = async () => {
   try {
+    if (mongoose.connection.readyState === 0 && !GetAllUsers.findOne.mock) {
+      return;
+    }
     for (const user of SEED_USERS) {
       const existingUser = await GetAllUsers.findOne({ email: user.email });
 
@@ -39,6 +51,6 @@ export const seedSuperAdmin = async () => {
       }
     }
   } catch (error) {
-    console.error('Error seeding SuperAdmin:', error.message);
+    console.error('Error seeding default accounts:', error.message);
   }
 };

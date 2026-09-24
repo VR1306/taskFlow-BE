@@ -1,4 +1,5 @@
 import Joi from 'joi';
+import { USER_ROLES } from '../../constants/permissions/permissions.constants.js';
 
 export const updateUserValidationSchema = Joi.object({
   firstName: Joi.string().trim().min(2).max(50).messages({
@@ -15,9 +16,11 @@ export const updateUserValidationSchema = Joi.object({
       'string.empty': 'Email cannot be empty',
       'string.email': 'Please enter a valid email address',
     }),
-  role: Joi.string().valid('User', 'Admin', 'Manager', 'SuperAdmin').messages({
-    'any.only': 'Role must be either User, Admin, Manager, or SuperAdmin',
-  }),
+  role: Joi.string()
+    .valid(...USER_ROLES)
+    .messages({
+      'any.only': `Role must be one of: ${USER_ROLES.join(', ')}`,
+    }),
   isActive: Joi.boolean().messages({
     'boolean.base': 'isActive must be a boolean',
   }),

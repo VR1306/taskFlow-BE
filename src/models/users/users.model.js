@@ -1,5 +1,11 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
+import {
+  USER_ROLES_SCHEMA,
+  USER_DEFAULT_ROLE,
+  USER_ID_PREFIX,
+  PRIMARY_ADMIN_EMAIL,
+} from '../../constants/permissions/permissions.constants.js';
 
 export async function getNextUserId(model) {
   try {
@@ -10,19 +16,19 @@ export async function getNextUserId(model) {
       .lean();
 
     if (!lastUser?.userId) {
-      return 'TF0001';
+      return `${USER_ID_PREFIX}0001`;
     }
 
     const match = lastUser.userId.match(/^TF(\d+)$/);
     if (!match) {
-      return 'TF0001';
+      return `${USER_ID_PREFIX}0001`;
     }
 
     const nextNum = Number.parseInt(match[1], 10) + 1;
     const paddedNum = String(nextNum).padStart(4, '0');
-    return `TF${paddedNum}`;
+    return `${USER_ID_PREFIX}${paddedNum}`;
   } catch {
-    return 'TF0001';
+    return `${USER_ID_PREFIX}0001`;
   }
 }
 
@@ -56,8 +62,8 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ['SuperAdmin', 'Admin', 'Manager', 'User'],
-      default: 'User',
+      enum: USER_ROLES_SCHEMA,
+      default: USER_DEFAULT_ROLE,
     },
     isActive: {
       type: Boolean,
@@ -88,21 +94,18 @@ const userSchema = new mongoose.Schema(
   { timestamps: true, collection: 'users' }
 );
 
-// Prevent SuperAdmin deletion (Query middleware)
+// Prevent primary Taskflow Admin deletion (Query middleware)
 userSchema.pre(['deleteOne', 'findOneAndDelete', 'deleteMany'], async function () {
   const docToDelete = await this.model.findOne(this.getQuery());
-  if (
-    docToDelete?.role === 'SuperAdmin' ||
-    docToDelete?.email === 'vijayaraghavan130699@gmail.com'
-  ) {
-    throw new Error('Deletion prohibited: SuperAdmin account cannot be deleted.');
+  if (docToDelete?.role === 'Taskflow Admin' || docToDelete?.email === PRIMARY_ADMIN_EMAIL) {
+    throw new Error('Deletion prohibited: Taskflow Admin account cannot be deleted.');
   }
 });
 
-// Prevent SuperAdmin deletion (Document middleware: doc.deleteOne())
+// Prevent primary Taskflow Admin deletion (Document middleware: doc.deleteOne())
 userSchema.pre('deleteOne', { document: true, query: false }, function () {
-  if (this.role === 'SuperAdmin' || this.email === 'vijayaraghavan130699@gmail.com') {
-    throw new Error('Deletion prohibited: SuperAdmin account cannot be deleted.');
+  if (this.role === 'Taskflow Admin' || this.email === PRIMARY_ADMIN_EMAIL) {
+    throw new Error('Deletion prohibited: Taskflow Admin account cannot be deleted.');
   }
 });
 

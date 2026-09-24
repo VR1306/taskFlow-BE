@@ -370,10 +370,10 @@ describe('Roles Controller', () => {
       );
     });
 
-    it('prevents deactivating Super Admin role', async () => {
+    it('prevents deactivating Taskflow Admin role', async () => {
       const mockSuperAdminDoc = {
         _id: 'super-admin-id',
-        name: 'Super Admin',
+        name: 'Taskflow Admin',
         isSystem: true,
         isActive: true,
         save: jest.fn().mockResolvedValue(true),
@@ -390,7 +390,7 @@ describe('Roles Controller', () => {
       expect(mockRes.json).toHaveBeenCalledWith(
         expect.objectContaining({
           success: false,
-          message: 'Super Admin role cannot be deactivated.',
+          message: 'Taskflow Admin role cannot be deactivated.',
         })
       );
     });
@@ -430,7 +430,7 @@ describe('Roles Controller', () => {
       const mockSystemRole = {
         _id: 'sys-role',
         roleId: 'RL0001',
-        name: 'Super Admin',
+        name: 'Taskflow Admin',
         isSystem: true,
       };
 

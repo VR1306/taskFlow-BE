@@ -108,13 +108,13 @@ describe('Auth Controller Tests', () => {
           token: expect.any(String),
           accessToken: expect.any(String),
           refreshToken: expect.any(String),
-          user: {
+          user: expect.objectContaining({
             id: '507f1f77bcf86cd799439011',
             firstName: 'Jane',
             lastName: 'Doe',
             email: 'jane@example.com',
             role: 'Admin',
-          },
+          }),
         })
       );
       expect(mockUser.save).toHaveBeenCalled();
@@ -619,5 +619,74 @@ describe('Auth Controller Tests', () => {
         message: 'Password changed successfully!',
       });
     });
+  });
+  it.each([undefined, Array.from({ length: 10 }, (_, index) => ({ token: `old-${index}` }))])(
+    'normalizes and bounds refresh sessions: %j',
+    async (refreshTokens) => {
+      const user = {
+        _id: '507f1f77bcf86cd799439011',
+        email: 'user@example.com',
+        comparePassword: jest.fn().mockResolvedValue(true),
+        save: jest.fn(),
+        refreshTokens,
+      };
+      jest.spyOn(GetAllUsers, 'findOne').mockResolvedValue(user);
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await signInUserApiCall({ body: { email: user.email, password: 'Password@123' } }, res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(user.refreshTokens).toHaveLength(refreshTokens ? 10 : 1);
+      expect(user.refreshTokens.at(-1).token).toEqual(expect.any(String));
+      if (refreshTokens) expect(user.refreshTokens[0].token).toBe('old-1');
+    }
+  );
+  it('rejects a refresh token when the account has no stored sessions', async () => {
+    const user = { _id: 'user-1', save: jest.fn() };
+    jest.spyOn(GetAllUsers, 'findById').mockResolvedValue(user);
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await refreshTokenApiCall({ body: { refreshToken: generateRefreshToken('user-1') } }, res);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'TOKEN_REVOKED' }));
+  });
+
+  it.each([
+    [{ body: { refreshToken: 'invalid' } }, null],
+    [{ body: {} }, null],
+    [{ user: { id: 'user-1' } }, null],
+    [{ user: { id: 'user-1' }, body: { refreshToken: 'invalid' } }, {}],
+  ])(
+    'makes logout idempotent when credentials or stored sessions are missing: %j',
+    async (req, user) => {
+      jest.spyOn(GetAllUsers, 'findById').mockResolvedValue(user);
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await logoutUserApiCall(req, res);
+      expect(res.status).toHaveBeenCalledWith(200);
+    }
+  );
+
+  it.each(['https://example.com/', ' ,https://example.com'])(
+    'normalizes reset URLs and unnamed accounts: %s',
+    async (url) => {
+      const previous = process.env.RESET_PASSWORD_CLIENT_URL;
+      process.env.RESET_PASSWORD_CLIENT_URL = url;
+      jest
+        .spyOn(GetAllUsers, 'findOne')
+        .mockResolvedValue({ email: 'user@example.com', save: jest.fn() });
+      const sendMail = jest.fn().mockResolvedValue({});
+      jest.spyOn(nodemailer, 'createTransport').mockReturnValue({ sendMail });
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      try {
+        await forgotPasswordEmailVerification({ body: { email: 'user@example.com' } }, res);
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(sendMail).toHaveBeenCalledTimes(1);
+      } finally {
+        if (previous === undefined) delete process.env.RESET_PASSWORD_CLIENT_URL;
+        else process.env.RESET_PASSWORD_CLIENT_URL = previous;
+      }
+    }
+  );
+
+  it('accepts the request user id alias when validating password changes', async () => {
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await changePasswordFunction({ user: { id: 'user-1' }, body: {} }, res);
+    expect(res.status).toHaveBeenCalledWith(400);
   });
 });

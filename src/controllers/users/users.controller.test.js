@@ -475,16 +475,16 @@ describe('Users Controller', () => {
       );
     });
 
-    it('prevents demoting primary SuperAdmin', async () => {
+    it('prevents demoting the primary Taskflow Admin', async () => {
       mockReq.params = { id: 'superadmin-123' };
       mockReq.body = {
-        role: 'User',
+        role: 'Developer',
       };
 
       const mockSuperAdminDoc = {
         _id: 'superadmin-123',
         email: 'vijayaraghavan130699@gmail.com',
-        role: 'SuperAdmin',
+        role: 'Taskflow Admin',
       };
 
       jest.spyOn(GetAllUsers, 'findOne').mockResolvedValue(mockSuperAdminDoc);
@@ -494,7 +494,7 @@ describe('Users Controller', () => {
       expect(mockRes.status).toHaveBeenCalledWith(403);
       expect(mockRes.json).toHaveBeenCalledWith({
         success: false,
-        message: 'Cannot demote the primary SuperAdmin account.',
+        message: 'Cannot demote the primary Taskflow Admin account.',
       });
     });
 
@@ -552,13 +552,13 @@ describe('Users Controller', () => {
       });
     });
 
-    it('prevents soft-deleting SuperAdmin', async () => {
+    it('prevents soft-deleting the Taskflow Admin', async () => {
       mockReq.params = { id: 'superadmin-id' };
 
       const mockSuperAdminDoc = {
         _id: 'superadmin-id',
         email: 'vijayaraghavan130699@gmail.com',
-        role: 'SuperAdmin',
+        role: 'Taskflow Admin',
       };
 
       jest.spyOn(GetAllUsers, 'findOne').mockResolvedValue(mockSuperAdminDoc);
@@ -568,7 +568,7 @@ describe('Users Controller', () => {
       expect(mockRes.status).toHaveBeenCalledWith(403);
       expect(mockRes.json).toHaveBeenCalledWith({
         success: false,
-        message: 'Deletion prohibited: SuperAdmin account cannot be deleted.',
+        message: 'Deletion prohibited: Taskflow Admin account cannot be deleted.',
       });
     });
 
@@ -656,5 +656,46 @@ describe('Users Controller', () => {
       expect(mockRes.status).toHaveBeenCalledWith(200);
       expect(mockRes.send).toHaveBeenCalledWith(expect.stringContaining('"John, Jr."'));
     });
+  });
+  it('rejects unauthorized creation of administrators', async () => {
+    mockReq.body = { role: 'Taskflow Admin' };
+    mockReq.user = { role: 'Project Manager' };
+    await createUserApiCall(mockReq, mockRes);
+    expect(mockRes.status).toHaveBeenCalledWith(403);
+  });
+
+  it('returns 404 for missing users during updates', async () => {
+    jest.spyOn(GetAllUsers, 'findOne').mockResolvedValue(null);
+    mockReq.params.id = 'missing';
+    await updateUserApiCall(mockReq, mockRes);
+    expect(mockRes.status).toHaveBeenCalledWith(404);
+  });
+
+  it('rejects unauthorized promotion of a developer to administrator', async () => {
+    jest.spyOn(GetAllUsers, 'findOne').mockResolvedValue({ role: 'Developer' });
+    mockReq.body = { role: 'Taskflow Admin' };
+    mockReq.user = { role: 'Project Manager' };
+    await updateUserApiCall(mockReq, mockRes);
+    expect(mockRes.status).toHaveBeenCalledWith(403);
+  });
+
+  it('updates a unique email and saves the account', async () => {
+    const user = {
+      _id: 'id-1',
+      email: 'old@example.com',
+      role: 'Developer',
+      save: jest.fn(),
+      toObject: () => ({ _id: 'id-1' }),
+    };
+    jest
+      .spyOn(GetAllUsers, 'findOne')
+      .mockResolvedValueOnce(user)
+      .mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
+    mockReq.params.id = 'id-1';
+    mockReq.body = { email: 'new@example.com' };
+    await updateUserApiCall(mockReq, mockRes);
+    expect(user.email).toBe('new@example.com');
+    expect(user.save).toHaveBeenCalledTimes(1);
+    expect(mockRes.status).toHaveBeenCalledWith(200);
   });
 });

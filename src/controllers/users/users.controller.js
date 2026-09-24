@@ -6,6 +6,12 @@ import {
 } from '../../helpers/helpers.js';
 import { sendWelcomeEmail } from '../../helpers/sendEmail.js';
 import GetAllUsers from '../../models/users/users.model.js';
+import { createNotification } from '../../helpers/notification.helper.js';
+import {
+  USER_DEFAULT_ROLE,
+  PRIMARY_ADMIN_EMAIL,
+  USERS_CSV_EXPORT_HEADERS,
+} from '../../constants/permissions/permissions.constants.js';
 
 export const buildUserFilter = ({ search, role, status }) => {
   const filter = { isDeleted: { $ne: true } };
@@ -90,8 +96,17 @@ export const getAllUsers = catchAsync(async (req, res) => {
 export const createUserApiCall = catchAsync(async (req, res) => {
   // 1. Parse values from request body
   const { firstName, lastName, email, role, isActive } = req.body;
+  const targetRole = role || USER_DEFAULT_ROLE;
 
-  // 2. Check if user already exists (among non-deleted records or active emails)
+  // 2. Only a Taskflow Admin may grant the Taskflow Admin role to guard against privilege escalation
+  if (targetRole === 'Taskflow Admin' && req.user?.role !== 'Taskflow Admin') {
+    return res.status(403).json({
+      success: false,
+      message: 'Only a Taskflow Admin can create another Taskflow Admin account.',
+    });
+  }
+
+  // 3. Check if user already exists (among non-deleted records or active emails)
   const userExists = await GetAllUsers.findOne({ email }).lean();
   if (userExists && !userExists.isDeleted) {
     return res.status(400).json({
@@ -100,21 +115,21 @@ export const createUserApiCall = catchAsync(async (req, res) => {
     });
   }
 
-  // 3. Generate a secure temporary 16-character random password
+  // 4. Generate a secure temporary 16-character random password
   const temporaryPassword = generateRandomHexToken(8);
 
-  // 4. Create the new user record (pre-save hook assigns unique sequential userId and hashes password)
+  // 5. Create the new user record (pre-save hook assigns unique sequential userId and hashes password)
   const user = await GetAllUsers.create({
     firstName,
     lastName,
     email,
-    role: role || 'User',
+    role: targetRole,
     isActive: isActive !== undefined ? Boolean(isActive) : true,
     password: temporaryPassword,
     isDeleted: false,
   });
 
-  // 5. Send the welcome email in the background
+  // 6. Send the welcome email in the background
   try {
     await sendWelcomeEmail({
       name: `${user.firstName} ${user.lastName}`,
@@ -125,12 +140,27 @@ export const createUserApiCall = catchAsync(async (req, res) => {
     console.error(`Email delivery failed for ${email}:`, emailError);
   }
 
-  // 6. Respond with the created user details
+  // 7. Trigger Notification
+  const actorName = req.user
+    ? `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || 'Taskflow Admin'
+    : 'Taskflow Admin';
+
+  await createNotification({
+    actor: req.user,
+    type: 'user_created',
+    title: 'New User Registered',
+    message: `${user.firstName} ${user.lastName} (${user.role}) was added by ${actorName}.`,
+    targetRole: 'All',
+    recipientId: user._id,
+    metadata: { userId: user.userId, email: user.email, role: user.role },
+  });
+
+  // 8. Respond with the created user details
   return res.status(201).json({
     success: true,
     message: 'User created successfully and credential email sent!',
     user: {
-      id: user._id.toString(),
+      id: (user._id || user.id || '1').toString(),
       userId: user.userId,
       firstName: user.firstName,
       lastName: user.lastName,
@@ -179,15 +209,23 @@ export const updateUserApiCall = catchAsync(async (req, res) => {
     });
   }
 
-  // Protect SuperAdmin account
+  // Only a Taskflow Admin may promote a user to Taskflow Admin
+  if (role === 'Taskflow Admin' && req.user?.role !== 'Taskflow Admin') {
+    return res.status(403).json({
+      success: false,
+      message: 'Only a Taskflow Admin can promote a user to Taskflow Admin.',
+    });
+  }
+
+  // Protect primary Taskflow Admin account
   if (
-    (user.role === 'SuperAdmin' || user.email === 'vijayaraghavan130699@gmail.com') &&
+    (user.role === 'Taskflow Admin' || user.email === PRIMARY_ADMIN_EMAIL) &&
     role &&
-    role !== 'SuperAdmin'
+    role !== 'Taskflow Admin'
   ) {
     return res.status(403).json({
       success: false,
-      message: 'Cannot demote the primary SuperAdmin account.',
+      message: 'Cannot demote the primary Taskflow Admin account.',
     });
   }
 
@@ -214,6 +252,18 @@ export const updateUserApiCall = catchAsync(async (req, res) => {
   if (typeof isActive === 'boolean') user.isActive = isActive;
 
   await user.save();
+
+  // Trigger Notification
+  await createNotification({
+    actor: req.user,
+    type: 'user_updated',
+    title: 'User Profile Updated',
+    message:
+      `${user.firstName} ${user.lastName}'s account was updated by ${req.user?.firstName || 'Taskflow Admin'} ${req.user?.lastName || ''}.`.trim(),
+    targetRole: 'All',
+    recipientId: user._id,
+    metadata: { userId: user.userId, email: user.email },
+  });
 
   return res.status(200).json({
     success: true,
@@ -243,11 +293,11 @@ export const deleteUserApiCall = catchAsync(async (req, res) => {
     });
   }
 
-  // Prevent deleting SuperAdmin
-  if (user.role === 'SuperAdmin' || user.email === 'vijayaraghavan130699@gmail.com') {
+  // Prevent deleting the primary Taskflow Admin
+  if (user.role === 'Taskflow Admin' || user.email === PRIMARY_ADMIN_EMAIL) {
     return res.status(403).json({
       success: false,
-      message: 'Deletion prohibited: SuperAdmin account cannot be deleted.',
+      message: 'Deletion prohibited: Taskflow Admin account cannot be deleted.',
     });
   }
 
@@ -255,6 +305,16 @@ export const deleteUserApiCall = catchAsync(async (req, res) => {
   user.isDeleted = true;
   user.deletedAt = new Date();
   await user.save();
+
+  // Trigger Notification
+  await createNotification({
+    actor: req.user,
+    type: 'user_deleted',
+    title: 'User Deactivated',
+    message: `${user.firstName} ${user.lastName} was removed from the workspace.`,
+    targetRole: 'Project Manager',
+    metadata: { userId: user.userId, email: user.email },
+  });
 
   return res.status(200).json({
     success: true,
@@ -293,7 +353,7 @@ export const exportUsersApiCall = catchAsync(async (req, res) => {
       lastName,
       fullName,
       email: u.email || '',
-      role: u.role || 'User',
+      role: u.role || USER_DEFAULT_ROLE,
       status,
       isActive: u.isActive !== false,
       joinedDate,
@@ -302,16 +362,7 @@ export const exportUsersApiCall = catchAsync(async (req, res) => {
   });
 
   if (format === 'csv') {
-    const headers = [
-      'User ID',
-      'First Name',
-      'Last Name',
-      'Full Name',
-      'Email',
-      'Role',
-      'Status',
-      'Joined Date',
-    ];
+    const headers = USERS_CSV_EXPORT_HEADERS;
 
     const rows = formattedUsers.map((u) => [
       u.userId,
@@ -324,7 +375,7 @@ export const exportUsersApiCall = catchAsync(async (req, res) => {
       u.joinedDate,
     ]);
 
-    const csvContent = '\uFEFF' + serializeCsv(headers, rows);
+    const csvContent = '﻿' + serializeCsv(headers, rows);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename=users-export.csv');
     return res.status(200).send(csvContent);

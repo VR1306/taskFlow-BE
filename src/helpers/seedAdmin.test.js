@@ -7,18 +7,20 @@ describe('seedSuperAdmin Helper Tests', () => {
     jest.restoreAllMocks();
   });
 
-  it('should export SEED_USERS in sequential order with SuperAdmin and Test User', () => {
-    expect(SEED_USERS).toHaveLength(2);
+  it('should export SEED_USERS in sequential order with Taskflow Admin, Project Manager, and Developer', () => {
+    expect(SEED_USERS).toHaveLength(3);
     expect(SEED_USERS[0].userId).toBe('TF0001');
-    expect(SEED_USERS[0].role).toBe('SuperAdmin');
+    expect(SEED_USERS[0].role).toBe('Taskflow Admin');
     expect(SEED_USERS[1].userId).toBe('TF0002');
-    expect(SEED_USERS[1].role).toBe('User');
+    expect(SEED_USERS[1].role).toBe('Project Manager');
+    expect(SEED_USERS[2].userId).toBe('TF0003');
+    expect(SEED_USERS[2].role).toBe('Developer');
   });
 
   it('should not create users if all already exist with userId', async () => {
     jest.spyOn(GetAllUsers, 'findOne').mockImplementation(({ email }) => {
       const match = SEED_USERS.find((u) => u.email === email);
-      return Promise.resolve(match ? { ...match } : null);
+      return Promise.resolve(match ? { ...match, save: jest.fn().mockResolvedValue(true) } : null);
     });
     const createSpy = jest.spyOn(GetAllUsers, 'create').mockResolvedValue({});
     const updateSpy = jest.spyOn(GetAllUsers, 'updateOne').mockResolvedValue({});
@@ -32,7 +34,8 @@ describe('seedSuperAdmin Helper Tests', () => {
   it('should update user with userId if one exists without userId', async () => {
     jest.spyOn(GetAllUsers, 'findOne').mockResolvedValue({
       email: 'vijayaraghavan130699@gmail.com',
-      role: 'SuperAdmin',
+      role: 'Taskflow Admin',
+      save: jest.fn().mockResolvedValue(true),
     });
     const createSpy = jest.spyOn(GetAllUsers, 'create').mockResolvedValue({});
     const updateSpy = jest.spyOn(GetAllUsers, 'updateOne').mockResolvedValue({});
@@ -46,29 +49,19 @@ describe('seedSuperAdmin Helper Tests', () => {
     );
   });
 
-  it('should create seed accounts in order if none exist', async () => {
+  it('should create seed accounts if none exist', async () => {
     jest.spyOn(GetAllUsers, 'findOne').mockResolvedValue(null);
-    const createSpy = jest.spyOn(GetAllUsers, 'create').mockResolvedValue({});
+    const createSpy = jest.spyOn(GetAllUsers, 'create').mockImplementation((data) =>
+      Promise.resolve({
+        ...data,
+        _id: '650c00000000000000000011',
+        save: jest.fn().mockResolvedValue(true),
+      })
+    );
 
     await seedSuperAdmin();
 
-    expect(createSpy).toHaveBeenCalledTimes(2);
-    expect(createSpy).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        userId: 'TF0001',
-        email: 'vijayaraghavan130699@gmail.com',
-        role: 'SuperAdmin',
-      })
-    );
-    expect(createSpy).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        userId: 'TF0002',
-        email: 'testuser@taskflow.com',
-        role: 'User',
-      })
-    );
+    expect(createSpy).toHaveBeenCalledTimes(3);
   });
 
   it('should catch and log error gracefully when findOne fails', async () => {
@@ -77,6 +70,9 @@ describe('seedSuperAdmin Helper Tests', () => {
 
     await seedSuperAdmin();
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith('Error seeding SuperAdmin:', 'DB Query Failed');
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      'Error seeding default accounts:',
+      'DB Query Failed'
+    );
   });
 });

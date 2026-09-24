@@ -10,6 +10,7 @@ import {
 } from '../../../controllers/roles/roles.controller.js';
 import { validateUserToken } from '../../../middlewares/protectedApi.middleware.js';
 import { validateRequest } from '../../../middlewares/validateSchema.js';
+import { requirePermission } from '../../../helpers/permissions.helper.js';
 import createRoleValidationSchema from '../../../models/roles/createRole.model.js';
 import updateRoleValidationSchema from '../../../models/roles/updateRole.model.js';
 
@@ -47,7 +48,7 @@ router.get('/permissions', validateUserToken, getPermissionsCatalogue);
  *     security:
  *       - BearerAuth: []
  */
-router.get('/export', validateUserToken, exportRoles);
+router.get('/export', validateUserToken, requirePermission('roles.view'), exportRoles);
 
 /**
  * @swagger
@@ -85,7 +86,7 @@ router.get('/export', validateUserToken, exportRoles);
  *       200:
  *         description: Paginated roles list
  */
-router.get('/', validateUserToken, getAllRoles);
+router.get('/', validateUserToken, requirePermission('roles.view'), getAllRoles);
 
 /**
  * @swagger
@@ -108,7 +109,7 @@ router.get('/', validateUserToken, getAllRoles);
  *       404:
  *         description: Role not found
  */
-router.get('/:id', validateUserToken, getRoleById);
+router.get('/:id', validateUserToken, requirePermission('roles.view'), getRoleById);
 
 /**
  * @swagger
@@ -134,7 +135,7 @@ router.get('/:id', validateUserToken, getRoleById);
  *                 type: string
  *               roleType:
  *                 type: string
- *                 enum: [Super Admin, Admin, Manager, User, Guest, Custom]
+ *                 enum: [Taskflow Admin, Project Manager, Developer, QA, Custom]
  *               permissions:
  *                 type: array
  *                 items:
@@ -147,7 +148,13 @@ router.get('/:id', validateUserToken, getRoleById);
  *       400:
  *         description: Validation error or duplicate role name
  */
-router.post('/', validateUserToken, validateRequest(createRoleValidationSchema), createRole);
+router.post(
+  '/',
+  validateUserToken,
+  requirePermission('roles.create'),
+  validateRequest(createRoleValidationSchema),
+  createRole
+);
 
 /**
  * @swagger
@@ -176,7 +183,13 @@ router.post('/', validateUserToken, validateRequest(createRoleValidationSchema),
  *       404:
  *         description: Role not found
  */
-router.put('/:id', validateUserToken, validateRequest(updateRoleValidationSchema), updateRole);
+router.put(
+  '/:id',
+  validateUserToken,
+  requirePermission('roles.edit'),
+  validateRequest(updateRoleValidationSchema),
+  updateRole
+);
 
 /**
  * @swagger
@@ -201,6 +214,6 @@ router.put('/:id', validateUserToken, validateRequest(updateRoleValidationSchema
  *       404:
  *         description: Role not found
  */
-router.delete('/:id', validateUserToken, deleteRole);
+router.delete('/:id', validateUserToken, requirePermission('roles.delete'), deleteRole);
 
 export default router;

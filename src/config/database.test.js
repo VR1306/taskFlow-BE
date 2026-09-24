@@ -96,7 +96,10 @@ describe('Database Connection Module Tests', () => {
 
     const conn = await connectDb();
     expect(conn).toStrictEqual(mockMongooseInstance);
-    expect(consoleErrorSpy).toHaveBeenCalledWith('Error seeding SuperAdmin:', 'Seed query failed');
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      'Error seeding default accounts:',
+      'Seed query failed'
+    );
   });
 
   it('should reset cached promise and rethrow when connection fails', async () => {

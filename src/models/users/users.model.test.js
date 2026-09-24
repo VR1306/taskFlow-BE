@@ -18,7 +18,7 @@ describe('Users Model Unit Tests', () => {
     expect(user.firstName).toBe('Alice');
     expect(user.lastName).toBe('Wonder');
     expect(user.email).toBe('alice@wonderland.com');
-    expect(user.role).toBe('User');
+    expect(user.role).toBe('Developer');
     expect(user.isDeleted).toBe(false);
     expect(user.refreshTokens).toEqual([]);
   });
@@ -116,7 +116,7 @@ describe('Users Model Unit Tests', () => {
     expect(isValid).toBe(true);
   });
 
-  it('blocks deletion of SuperAdmin in query middleware hook', async () => {
+  it('blocks deletion of the Taskflow Admin in query middleware hook', async () => {
     const queryHooks = GetAllUsers.schema.s.hooks._pres.get('deleteOne') || [];
     const queryHook = queryHooks.find((h) => !h.isAsync && !h.query)?.fn || queryHooks[0]?.fn;
 
@@ -124,7 +124,7 @@ describe('Users Model Unit Tests', () => {
       getQuery: jest.fn().mockReturnValue({ email: 'vijayaraghavan130699@gmail.com' }),
       model: {
         findOne: jest.fn().mockResolvedValue({
-          role: 'SuperAdmin',
+          role: 'Taskflow Admin',
           email: 'vijayaraghavan130699@gmail.com',
         }),
       },
@@ -132,24 +132,49 @@ describe('Users Model Unit Tests', () => {
 
     if (queryHook) {
       await expect(queryHook.call(mockQuery)).rejects.toThrow(
-        'Deletion prohibited: SuperAdmin account cannot be deleted.'
+        'Deletion prohibited: Taskflow Admin account cannot be deleted.'
       );
     }
   });
 
-  it('blocks deletion of SuperAdmin in document middleware hook', () => {
+  it('blocks deletion of the Taskflow Admin in document middleware hook', () => {
     const docHooks = GetAllUsers.schema.s.hooks._pres.get('deleteOne') || [];
     const docHook = docHooks[1]?.fn;
 
-    const superAdminUser = {
-      role: 'SuperAdmin',
+    const taskflowAdminUser = {
+      role: 'Taskflow Admin',
       email: 'vijayaraghavan130699@gmail.com',
     };
 
     if (docHook) {
-      expect(() => docHook.call(superAdminUser)).toThrow(
-        'Deletion prohibited: SuperAdmin account cannot be deleted.'
+      expect(() => docHook.call(taskflowAdminUser)).toThrow(
+        'Deletion prohibited: Taskflow Admin account cannot be deleted.'
       );
     }
   });
+  it('assigns a sequential ID on saving a new user', async () => {
+    jest.spyOn(GetAllUsers, 'findOne').mockReturnValue({
+      sort: jest.fn().mockReturnThis(),
+      collation: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(null),
+    });
+    const user = new GetAllUsers({ firstName: 'Ada', email: 'ada@example.com' });
+    user.isModified = jest.fn().mockReturnValue(false);
+    for (const hook of GetAllUsers.schema.s.hooks._pres.get('save')) await hook.fn.call(user);
+    expect(user.userId).toBe('TF0001');
+  });
+
+  it.each([null, { role: 'Developer', email: 'dev@example.com' }])(
+    'allows deletion of unprotected query results: %j',
+    async (user) => {
+      const hooks = GetAllUsers.schema.s.hooks._pres.get('deleteOne');
+      await expect(
+        hooks[0].fn.call({
+          model: { findOne: jest.fn().mockResolvedValue(user) },
+          getQuery: () => ({ userId: 'TF0042' }),
+        })
+      ).resolves.toBeUndefined();
+      expect(() => hooks[1].fn.call(user || {})).not.toThrow();
+    }
+  );
 });

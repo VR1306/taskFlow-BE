@@ -204,4 +204,24 @@ describe('Backend Helper Functions', () => {
       expect(result).toBe('ID,Name,Role\nTF0001,John Doe,Admin\nTF0002,"Jane, ""Smith""",User');
     });
   });
+  it('supports legacy secret configuration and scalar user IDs', () => {
+    const previous = { ...process.env };
+    delete process.env.JWT_ACCESS_SECRET;
+    delete process.env.JWT_REFRESH_SECRET;
+    process.env.JWT_EXPIRES_IN = '5m';
+    process.env.JWT_REFRESH_EXPIRES_IN = '1d';
+    process.env.JWT_REFRESH_REMEMBER_EXPIRES_IN = '2d';
+    try {
+      expect(verifyAccessToken(generateAccessToken({ id: 'u1' })).id).toBe('u1');
+      expect(verifyAccessToken(generateAccessToken('u2')).id).toBe('u2');
+      expect(verifyRefreshToken(generateRefreshToken({ id: 'u1' })).id).toBe('u1');
+      expect(verifyRefreshToken(generateRefreshToken('u2', true)).id).toBe('u2');
+      expect(generateAuthTokens('u3').accessToken).toEqual(expect.any(String));
+      expect(generateRandomHexToken()).toHaveLength(64);
+      expect(isOriginAllowed('http://127.0.0.1:9999')).toBe(true);
+      expect(isOriginAllowed('https://untrusted.example')).toBe(false);
+    } finally {
+      process.env = previous;
+    }
+  });
 });

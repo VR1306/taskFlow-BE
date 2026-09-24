@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import GetAllUsers from '../models/users/users.model.js';
 import { extractBearerToken } from '../helpers/helpers.js';
+import { getPermissionsForRole } from '../helpers/permissions.helper.js';
 
 // 1. Check if the user is logged in via JWT
 export const validateUserToken = async (req, res, next) => {
@@ -26,6 +27,10 @@ export const validateUserToken = async (req, res, next) => {
         message: 'The user belonging to this token no longer exists.',
       });
     }
+
+    // Attach the caller's granted permissions so downstream routes can
+    // authorize by permission ID instead of hardcoded role-name checks.
+    currentUser.permissions = await getPermissionsForRole(currentUser.role);
 
     // Grant access to the protected route by attaching the user object to the request
     req.user = currentUser;
