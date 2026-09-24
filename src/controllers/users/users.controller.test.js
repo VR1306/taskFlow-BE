@@ -563,13 +563,11 @@ describe('Users Controller', () => {
         .spyOn(GetAllUsers, 'findOne')
         .mockResolvedValueOnce(mockUserDoc) // find target user
         .mockReturnValueOnce({
-          lean: jest
-            .fn()
-            .mockResolvedValue({
-              _id: 'other-user',
-              email: 'conflict@example.com',
-              isDeleted: true,
-            }),
+          lean: jest.fn().mockResolvedValue({
+            _id: 'other-user',
+            email: 'conflict@example.com',
+            isDeleted: true,
+          }),
         }); // email conflict check finds the soft-deleted holder
 
       await updateUserApiCall(mockReq, mockRes);

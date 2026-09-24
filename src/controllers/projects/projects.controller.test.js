@@ -67,6 +67,15 @@ describe('Projects Controller', () => {
       ]);
     });
 
+    it('scopes a user using user.id when _id is not provided', () => {
+      const filter = buildProjectFilter({ user: { id: 'user-id-only', role: 'Developer' } });
+      expect(filter.$or).toEqual([
+        { leadId: 'user-id-only' },
+        { members: 'user-id-only' },
+        { createdBy: 'user-id-only' },
+      ]);
+    });
+
     it('scopes Taskflow Admin to their own projects too — no role-based bypass', () => {
       const filter = buildProjectFilter({ user: { _id: 'admin-1', role: 'Taskflow Admin' } });
       expect(filter.$or).toEqual([

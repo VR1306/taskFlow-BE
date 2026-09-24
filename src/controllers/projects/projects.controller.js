@@ -18,7 +18,7 @@ const MEMBER_POPULATE_FIELDS = 'userId firstName lastName email role profilePic 
  * enforced here too as a server-side guard against direct API calls that bypass the UI.
  */
 async function findAdminAssignee(userIds) {
-  const ids = [...new Set((userIds || []).filter(Boolean).map(String))];
+  const ids = [...new Set(userIds.filter(Boolean).map(String))];
   if (ids.length === 0) return null;
   const admins = await GetAllUsers.find({ _id: { $in: ids }, role: 'Taskflow Admin' })
     .select('firstName lastName')
