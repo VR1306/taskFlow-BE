@@ -390,7 +390,10 @@ describe('Tasks Controller', () => {
     expect(task.description).toBe('details');
     expect(task.labels).toEqual(['tag']);
     expect(task.save).toHaveBeenCalledTimes(1);
-    expect(notify).toHaveBeenCalledTimes(assigneeId === taskDocId ? 1 : 0);
+    // Reassigning notifies the new assignee; unassigning (null or an invalid id, which
+    // is coerced to unassign) notifies the previously-assigned user instead — either way
+    // exactly one notification fires since the task started with an assignee.
+    expect(notify).toHaveBeenCalledTimes(1);
   });
 
   it('notifies the reporter when completing a task', async () => {

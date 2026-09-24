@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals';
 import mongoose from 'mongoose';
+import nodemailer from 'nodemailer';
 import {
   buildProjectFilter,
   generateProjectKey,
@@ -13,10 +14,12 @@ import {
 import Project from '../../models/projects/projects.model.js';
 import Task from '../../models/tasks/tasks.model.js';
 import GetAllUsers from '../../models/users/users.model.js';
+import Notification from '../../models/notifications/notifications.model.js';
 
 describe('Projects Controller', () => {
   let mockReq;
   let mockRes;
+  let mockSendMail;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -30,6 +33,14 @@ describe('Projects Controller', () => {
       status: jest.fn().mockReturnThis(),
       json: jest.fn().mockReturnThis(),
     };
+
+    mockSendMail = jest.fn().mockResolvedValue({ messageId: '123' });
+    jest.spyOn(nodemailer, 'createTransport').mockReturnValue({ sendMail: mockSendMail });
+    jest.spyOn(GetAllUsers, 'find').mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      sort: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([]),
+    });
   });
 
   describe('buildProjectFilter', () => {
@@ -186,6 +197,79 @@ describe('Projects Controller', () => {
       );
       expect(mockRes.status).toHaveBeenCalledWith(201);
     });
+
+    it('notifies the admin feed with assigned member names and emails every assigned member their role', async () => {
+      jest.spyOn(Project, 'findOne').mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
+      const mockCreated = {
+        _id: 'proj-1',
+        name: 'Engineering',
+        key: 'ENGI',
+        toObject: () => ({ _id: 'proj-1', name: 'Engineering', key: 'ENGI' }),
+      };
+      jest.spyOn(Project, 'create').mockResolvedValue(mockCreated);
+      jest.spyOn(GetAllUsers, 'find').mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([
+          { _id: 'user-1', firstName: 'Jane', lastName: 'Doe', email: 'jane@taskflow.com' },
+          {
+            _id: 'user-2',
+            firstName: '',
+            lastName: '',
+            email: 'noname@taskflow.com',
+            role: 'Developer',
+          },
+          { _id: 'user-3', firstName: 'Sam', lastName: 'Lee', email: 'sam@taskflow.com' },
+        ]),
+      });
+      const notifySpy = jest.spyOn(Notification, 'create').mockResolvedValue({});
+
+      mockReq.body = { name: 'Engineering', memberIds: ['user-2', 'user-3'] };
+      await createProject(mockReq, mockRes);
+
+      expect(notifySpy).toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.stringContaining('Jane Doe') })
+      );
+
+      expect(mockSendMail).toHaveBeenCalledTimes(3);
+      const leadEmail = mockSendMail.mock.calls.find((c) => c[0].to === 'jane@taskflow.com')[0];
+      expect(leadEmail.html).toContain('Project Lead');
+      const memberEmail = mockSendMail.mock.calls.find((c) => c[0].to === 'noname@taskflow.com')[0];
+      expect(memberEmail.html).toContain('Developer');
+      const roleless = mockSendMail.mock.calls.find((c) => c[0].to === 'sam@taskflow.com')[0];
+      expect(roleless.html).toContain('Team Member');
+    });
+
+    it('logs and continues when an assignment email fails to send', async () => {
+      jest.spyOn(Project, 'findOne').mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
+      jest.spyOn(Project, 'create').mockResolvedValue({
+        _id: 'proj-1',
+        name: 'Engineering',
+        key: 'ENGI',
+        toObject: () => ({}),
+      });
+      jest.spyOn(GetAllUsers, 'find').mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
+        lean: jest
+          .fn()
+          .mockResolvedValue([
+            { _id: 'user-1', firstName: 'Jane', lastName: 'Doe', email: 'jane@taskflow.com' },
+          ]),
+      });
+      mockSendMail.mockRejectedValue(new Error('SMTP down'));
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      mockReq.body = { name: 'Engineering' };
+      await createProject(mockReq, mockRes);
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Project assignment email failed'),
+        'Failed to send project assignment email.'
+      );
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      consoleSpy.mockRestore();
+    });
   });
 
   describe('updateProject', () => {
@@ -222,6 +306,31 @@ describe('Projects Controller', () => {
       expect(mockProjectDoc.name).toBe('Engineering Team');
       expect(mockProjectDoc.members).toEqual(expect.arrayContaining([memberA, memberB, 'lead-1']));
       expect(mockProjectDoc.save).toHaveBeenCalled();
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+    });
+
+    it('notifies members removed from the project via a membership update', async () => {
+      const memberA = '650c00000000000000000010';
+      const memberB = '650c00000000000000000011';
+      const mockProjectDoc = {
+        _id: 'proj-1',
+        name: 'Engineering',
+        key: 'ENG',
+        leadId: 'lead-1',
+        members: ['lead-1', memberA, memberB],
+        save: jest.fn().mockResolvedValue(true),
+        toObject: () => ({ _id: 'proj-1', name: 'Engineering' }),
+      };
+
+      jest.spyOn(Project, 'findOne').mockResolvedValueOnce(mockProjectDoc);
+
+      mockReq.params = { id: 'proj-1' };
+      mockReq.body = { memberIds: [memberA] };
+
+      await updateProject(mockReq, mockRes);
+
+      expect(mockProjectDoc.members).toEqual(expect.arrayContaining([memberA, 'lead-1']));
+      expect(mockProjectDoc.members).not.toContain(memberB);
       expect(mockRes.status).toHaveBeenCalledWith(200);
     });
   });

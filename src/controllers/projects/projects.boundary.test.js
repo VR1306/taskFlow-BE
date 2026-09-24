@@ -1,6 +1,7 @@
 import { jest } from '@jest/globals';
 import Project from '../../models/projects/projects.model.js';
 import Task from '../../models/tasks/tasks.model.js';
+import GetAllUsers from '../../models/users/users.model.js';
 import {
   generateProjectKey,
   findActiveProject,
@@ -19,6 +20,14 @@ const query = (result) => ({
   skip: jest.fn().mockReturnThis(),
   limit: jest.fn().mockReturnThis(),
   lean: jest.fn().mockResolvedValue(result),
+});
+
+beforeEach(() => {
+  jest.spyOn(GetAllUsers, 'find').mockReturnValue({
+    select: jest.fn().mockReturnThis(),
+    sort: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue([]),
+  });
 });
 
 afterEach(() => jest.restoreAllMocks());

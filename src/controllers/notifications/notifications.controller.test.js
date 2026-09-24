@@ -2,6 +2,7 @@ import { jest } from '@jest/globals';
 import mongoose from 'mongoose';
 import {
   buildNotificationFilter,
+  buildNotificationLink,
   getNotifications,
   getUnreadNotificationsCount,
   markNotificationAsRead,
@@ -9,6 +10,7 @@ import {
   deleteNotification,
 } from './notifications.controller.js';
 import Notification from '../../models/notifications/notifications.model.js';
+import Project from '../../models/projects/projects.model.js';
 
 describe('Notifications Controller', () => {
   let req;
@@ -16,6 +18,7 @@ describe('Notifications Controller', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.spyOn(Project, 'find').mockReturnValue({ distinct: jest.fn().mockResolvedValue([]) });
     req = {
       user: {
         _id: new mongoose.Types.ObjectId('650c00000000000000000001'),
@@ -39,42 +42,92 @@ describe('Notifications Controller', () => {
   });
 
   describe('buildNotificationFilter', () => {
-    it('provides global feed for Taskflow Admin', () => {
-      const filter = buildNotificationFilter({ user: req.user });
+    it('provides global feed for Taskflow Admin', async () => {
+      const filter = await buildNotificationFilter({ user: req.user });
       expect(filter.isDeleted).toEqual({ $ne: true });
       expect(filter.$or).toBeUndefined();
+      expect(Project.find).not.toHaveBeenCalled();
     });
 
-    it('scopes notifications for Project Manager to their role and personal recipient targets', () => {
+    it('scopes notifications for Project Manager to their role, personal recipient targets, and non-project broadcasts', async () => {
       const pmUser = {
         _id: new mongoose.Types.ObjectId('650c00000000000000000002'),
         role: 'Project Manager',
       };
 
-      const filter = buildNotificationFilter({ user: pmUser });
+      const filter = await buildNotificationFilter({ user: pmUser });
       expect(filter.isDeleted).toEqual({ $ne: true });
       expect(filter.$or).toEqual(
         expect.arrayContaining([
           { recipientId: pmUser._id },
-          { targetRole: { $in: ['All', 'Project Manager'] } },
+          {
+            targetRole: { $in: ['All', 'Project Manager'] },
+            'metadata.projectId': { $exists: false },
+          },
         ])
       );
     });
 
-    it('scopes notifications for Developer to their role and personal recipient targets', () => {
+    it('scopes notifications for Developer to their role and personal recipient targets', async () => {
       const devUser = {
         _id: new mongoose.Types.ObjectId('650c00000000000000000003'),
         role: 'Developer',
       };
 
-      const filter = buildNotificationFilter({ user: devUser });
+      const filter = await buildNotificationFilter({ user: devUser });
       expect(filter.isDeleted).toEqual({ $ne: true });
       expect(filter.$or).toEqual(
         expect.arrayContaining([
           { recipientId: devUser._id },
-          { targetRole: { $in: ['All', 'Developer'] } },
+          { targetRole: { $in: ['All', 'Developer'] }, 'metadata.projectId': { $exists: false } },
         ])
       );
+    });
+
+    it('includes only projects the user belongs to in the project-scoped broadcast clause', async () => {
+      const devUser = {
+        _id: new mongoose.Types.ObjectId('650c00000000000000000003'),
+        role: 'Developer',
+      };
+      const distinct = jest.fn().mockResolvedValue(['proj-1', 'proj-2']);
+      jest.spyOn(Project, 'find').mockReturnValue({ distinct });
+
+      const filter = await buildNotificationFilter({ user: devUser });
+
+      expect(Project.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          $or: [{ members: devUser._id }, { leadId: devUser._id }],
+        })
+      );
+      expect(filter.$or).toEqual(
+        expect.arrayContaining([
+          {
+            targetRole: { $in: ['All', 'Developer'] },
+            'metadata.projectId': { $in: ['proj-1', 'proj-2'] },
+          },
+        ])
+      );
+    });
+  });
+
+  describe('buildNotificationLink', () => {
+    it('links task notifications to the project board, with the task id when known', () => {
+      expect(buildNotificationLink('task_assigned', { projectId: 'p1', taskId: 't1' })).toBe(
+        '/projects/p1?taskId=t1'
+      );
+      expect(buildNotificationLink('task_deleted', { projectId: 'p1' })).toBe('/projects/p1');
+      expect(buildNotificationLink('task_assigned', {})).toBeNull();
+    });
+
+    it('links project notifications to the project, except deletions which go to the list', () => {
+      expect(buildNotificationLink('project_updated', { projectId: 'p1' })).toBe('/projects/p1');
+      expect(buildNotificationLink('project_deleted', { projectId: 'p1' })).toBe('/projects');
+      expect(buildNotificationLink('project_created', {})).toBe('/projects');
+    });
+
+    it('links user notifications to the users list and returns null for unknown types', () => {
+      expect(buildNotificationLink('user_created', {})).toBe('/users');
+      expect(buildNotificationLink('something_else', {})).toBeNull();
     });
   });
 
@@ -199,9 +252,9 @@ describe('Notifications Controller', () => {
 
   it.each(['Taskflow Admin', 'Developer'])(
     'combines escaped search with role scope for %s',
-    (role) => {
+    async (role) => {
       const user = { id: 'user-1', role };
-      const filter = buildNotificationFilter({
+      const filter = await buildNotificationFilter({
         user,
         search: '  a.b  ',
         type: ' user_created ',

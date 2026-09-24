@@ -47,6 +47,37 @@ export const sendWelcomeEmail = async (options) => {
   }
 };
 
+export const sendProjectAssignmentEmail = async (options) => {
+  const htmlMessage = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+      <h2 style="color: #4A90E2; text-align: center;">You've Been Assigned to a Project</h2>
+      <p>Hello <strong>${options.name}</strong>,</p>
+      <p>You have been assigned to the project <strong>${options.projectName}</strong> as <strong>${options.role}</strong>.</p>
+
+      <div style="background-color: #f9f9f9; padding: 15px; border-left: 4px solid #4A90E2; margin: 20px 0;">
+        <p style="margin: 5px 0;"><strong>Project:</strong> ${options.projectName}</p>
+        <p style="margin: 5px 0;"><strong>Your Role:</strong> ${options.role}</p>
+      </div>
+
+      <p>Log in to your TaskFlow workspace to view the project board and get started.</p>
+      <p>Best regards,<br>The TaskFlow Engineering Team</p>
+    </div>
+  `;
+
+  try {
+    const transporter = getTransporter();
+    await transporter.sendMail({
+      from: `Taskflow <${process.env.GMAIL_USER}>`,
+      to: options.email,
+      subject: `You've been assigned to "${options.projectName}"`,
+      html: htmlMessage,
+    });
+  } catch (error) {
+    console.error('Error in sending Project Assignment Mail:', error);
+    throw new Error('Failed to send project assignment email.', { cause: error });
+  }
+};
+
 export const sendPasswordResetEmail = async (options) => {
   const htmlMessage = `
     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">

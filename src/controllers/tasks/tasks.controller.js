@@ -5,7 +5,7 @@ import Project from '../../models/projects/projects.model.js';
 import Comment from '../../models/comments/comments.model.js';
 import Attachment from '../../models/attachments/attachments.model.js';
 import ActivityLog from '../../models/activity/activity.model.js';
-import { createNotification } from '../../helpers/notification.helper.js';
+import { createNotification, notifyUsers } from '../../helpers/notification.helper.js';
 import { logActivity } from '../../helpers/activity.helper.js';
 import {
   TASK_STATUSES,
@@ -240,7 +240,7 @@ export const createTask = catchAsync(async (req, res) => {
       message: `You were assigned to ${task.taskKey}: ${task.title}`,
       targetRole: 'All',
       recipientId: validAssigneeId,
-      metadata: { taskId: task._id, taskKey: task.taskKey, projectId },
+      metadata: { taskId: task._id, taskKey: task.taskKey, projectId: project._id },
     });
   }
 
@@ -261,6 +261,8 @@ async function updateTaskAssignee(task, assigneeId, actor) {
   if (assigneeId !== undefined) {
     const nextAssigneeId =
       assigneeId && mongoose.Types.ObjectId.isValid(assigneeId) ? assigneeId : null;
+    const previousAssigneeId = task.assigneeId ? String(task.assigneeId) : null;
+
     if (String(nextAssigneeId || '') !== String(task.assigneeId || '')) {
       await logActivity({
         taskId: task._id,
@@ -279,6 +281,17 @@ async function updateTaskAssignee(task, assigneeId, actor) {
           message: `You were assigned to ${task.taskKey}: ${task.title}`,
           targetRole: 'All',
           recipientId: nextAssigneeId,
+          metadata: { taskId: task._id, taskKey: task.taskKey, projectId: task.projectId },
+        });
+      } else {
+        // Reaching here means nextAssigneeId is falsy but the assignee still changed,
+        // which is only possible if the task previously had an assignee to notify.
+        await createNotification({
+          actor: actor,
+          type: 'task_unassigned',
+          title: 'Task Unassigned',
+          message: `You were unassigned from ${task.taskKey}: ${task.title}`,
+          recipientId: previousAssigneeId,
           metadata: { taskId: task._id, taskKey: task.taskKey, projectId: task.projectId },
         });
       }
@@ -418,6 +431,15 @@ export const deleteTask = catchAsync(async (req, res) => {
   task.isDeleted = true;
   task.deletedAt = new Date();
   await task.save();
+
+  await notifyUsers({
+    recipientIds: [task.assigneeId, task.reporterId],
+    actor: req.user,
+    type: 'task_deleted',
+    title: 'Task Deleted',
+    message: `${task.taskKey}: ${task.title} was deleted.`,
+    metadata: { taskId: task._id, taskKey: task.taskKey, projectId: task.projectId },
+  });
 
   return res.status(200).json({
     success: true,

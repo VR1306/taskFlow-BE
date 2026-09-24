@@ -24,6 +24,7 @@
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
     "seed:admin": "node src/scripts/seedAdmin.js",
     "seed:testdata": "node src/scripts/seedTestData.js",
+    "seed:notifications": "node src/scripts/seedNotifications.js",
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

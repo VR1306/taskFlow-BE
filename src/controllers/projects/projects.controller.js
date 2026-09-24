@@ -3,13 +3,46 @@ import { catchAsync, escapeRegex } from '../../helpers/helpers.js';
 import Project from '../../models/projects/projects.model.js';
 import Task from '../../models/tasks/tasks.model.js';
 import GetAllUsers from '../../models/users/users.model.js';
-import { createNotification } from '../../helpers/notification.helper.js';
+import { createNotification, notifyUsers } from '../../helpers/notification.helper.js';
+import { sendProjectAssignmentEmail } from '../../helpers/sendEmail.js';
 import {
   PROJECT_STATUSES,
   PROJECT_DEFAULT_STATUS,
 } from '../../constants/permissions/permissions.constants.js';
 
 const MEMBER_POPULATE_FIELDS = 'userId firstName lastName email role profilePic isActive';
+
+/**
+ * Emails every given member their project assignment (project name + role), looking up
+ * each user's name/email/role. The project lead is labeled "Project Lead"; everyone
+ * else is labeled with their account role. Failures are logged, not thrown, so a mail
+ * outage never blocks the project create/update response.
+ */
+async function emailAssignedMembers({ memberIds, leadId, projectName }) {
+  if (!Array.isArray(memberIds) || memberIds.length === 0) return;
+
+  const users = await GetAllUsers.find({
+    _id: { $in: memberIds },
+    isDeleted: { $ne: true },
+  })
+    .select('firstName lastName email role')
+    .lean();
+
+  await Promise.all(
+    users.map((user) => {
+      const roleLabel =
+        leadId && String(user._id) === String(leadId) ? 'Project Lead' : user.role || 'Team Member';
+      return sendProjectAssignmentEmail({
+        name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
+        email: user.email,
+        projectName,
+        role: roleLabel,
+      }).catch((error) => {
+        console.error(`Project assignment email failed for ${user.email}:`, error.message);
+      });
+    })
+  );
+}
 
 export const buildProjectFilter = ({ search, status }) => {
   const filter = { isDeleted: { $ne: true } };
@@ -221,13 +254,30 @@ export const createProject = catchAsync(async (req, res) => {
     isDeleted: false,
   });
 
+  const assignedMembers = await GetAllUsers.find({
+    _id: { $in: [...memberSet] },
+    isDeleted: { $ne: true },
+  })
+    .select('firstName lastName')
+    .lean();
+  const assignedNames = assignedMembers
+    .map((u) => `${u.firstName || ''} ${u.lastName || ''}`.trim())
+    .filter(Boolean)
+    .join(', ');
+
   await createNotification({
     actor: req.user,
     type: 'project_created',
     title: 'Project Created',
-    message: `Project "${newProject.name}" (${newProject.key}) was created.`,
+    message: `Project "${newProject.name}" (${newProject.key}) was created and assigned to: ${assignedNames || 'no members yet'}.`,
     targetRole: 'All',
     metadata: { projectId: newProject._id, projectKey: newProject.key },
+  });
+
+  await emailAssignedMembers({
+    memberIds: [...memberSet],
+    leadId: resolvedLeadId,
+    projectName: newProject.name,
   });
 
   return res.status(201).json({
@@ -260,6 +310,8 @@ export const updateProject = catchAsync(async (req, res) => {
 
   const { name, description, status, leadId, memberIds } = req.body;
 
+  const previousMemberIds = new Set((project.members || []).map(String));
+
   if (name && name.trim().toLowerCase() !== project.name.toLowerCase()) {
     const duplicate = await Project.findOne({
       name: new RegExp(`^${escapeRegex(name.trim())}$`, 'i'),
@@ -279,10 +331,17 @@ export const updateProject = catchAsync(async (req, res) => {
   if (description !== undefined) project.description = String(description).trim();
   if (status && PROJECT_STATUSES.includes(status)) project.status = status;
   if (leadId && mongoose.Types.ObjectId.isValid(leadId)) project.leadId = leadId;
+
+  let addedMemberIds = [];
+  let removedMemberIds = [];
   if (Array.isArray(memberIds)) {
     const memberSet = new Set(memberIds.filter((id) => mongoose.Types.ObjectId.isValid(id)));
     if (project.leadId) memberSet.add(String(project.leadId));
     project.members = [...memberSet];
+
+    const currentMemberIds = new Set([...memberSet].map(String));
+    addedMemberIds = [...currentMemberIds].filter((id) => !previousMemberIds.has(id));
+    removedMemberIds = [...previousMemberIds].filter((id) => !currentMemberIds.has(id));
   }
 
   await project.save();
@@ -295,6 +354,34 @@ export const updateProject = catchAsync(async (req, res) => {
     targetRole: 'All',
     metadata: { projectId: project._id, projectKey: project.key },
   });
+
+  if (addedMemberIds.length > 0) {
+    await notifyUsers({
+      recipientIds: addedMemberIds,
+      actor: req.user,
+      type: 'project_member_added',
+      title: 'Added to Project',
+      message: `You were added to project "${project.name}" (${project.key}).`,
+      metadata: { projectId: project._id, projectKey: project.key },
+    });
+
+    await emailAssignedMembers({
+      memberIds: addedMemberIds,
+      leadId: project.leadId,
+      projectName: project.name,
+    });
+  }
+
+  if (removedMemberIds.length > 0) {
+    await notifyUsers({
+      recipientIds: removedMemberIds,
+      actor: req.user,
+      type: 'project_member_removed',
+      title: 'Removed from Project',
+      message: `You were removed from project "${project.name}" (${project.key}).`,
+      metadata: { projectId: project._id, projectKey: project.key },
+    });
+  }
 
   return res.status(200).json({
     success: true,
@@ -336,9 +423,24 @@ export const deleteProject = catchAsync(async (req, res) => {
     });
   }
 
+  const affectedMemberIds = [
+    ...new Set([...(project.members || []), project.leadId].filter(Boolean).map(String)),
+  ];
+
   project.isDeleted = true;
   project.deletedAt = new Date();
   await project.save();
+
+  // Notified directly by recipientId (rather than relying on project-membership
+  // scoping) since the project is no longer active/queryable for its former members.
+  await notifyUsers({
+    recipientIds: affectedMemberIds,
+    actor: req.user,
+    type: 'project_deleted',
+    title: 'Project Deleted',
+    message: `Project "${project.name}" (${project.key}) was deleted.`,
+    metadata: { projectId: project._id, projectKey: project.key },
+  });
 
   return res.status(200).json({
     success: true,

@@ -1,11 +1,40 @@
 import mongoose from 'mongoose';
 import { catchAsync, escapeRegex } from '../../helpers/helpers.js';
 import Notification from '../../models/notifications/notifications.model.js';
+import Project from '../../models/projects/projects.model.js';
 
 /**
- * Builds query filter for notification retrieval based on role hierarchy
+ * Resolves the sections a notification should deep-link to, scoped to what the
+ * type/metadata actually describes (a project, a task within a project, or the users list).
  */
-export const buildNotificationFilter = ({ user, search, type, unreadOnly = false }) => {
+export const buildNotificationLink = (type, metadata = {}) => {
+  const projectId = metadata?.projectId ? String(metadata.projectId) : null;
+  const taskId = metadata?.taskId ? String(metadata.taskId) : null;
+
+  if (typeof type !== 'string') return null;
+
+  if (type.startsWith('task_')) {
+    if (!projectId) return null;
+    return taskId ? `/projects/${projectId}?taskId=${taskId}` : `/projects/${projectId}`;
+  }
+
+  if (type.startsWith('project_')) {
+    if (type === 'project_deleted') return '/projects';
+    return projectId ? `/projects/${projectId}` : '/projects';
+  }
+
+  if (type.startsWith('user_')) {
+    return '/users';
+  }
+
+  return null;
+};
+
+/**
+ * Builds query filter for notification retrieval based on role hierarchy and,
+ * for project/task-scoped events, the projects the requesting user actually belongs to.
+ */
+export const buildNotificationFilter = async ({ user, search, type, unreadOnly = false }) => {
   const filter = { isDeleted: { $ne: true } };
 
   const userId = user._id || user.id;
@@ -13,9 +42,21 @@ export const buildNotificationFilter = ({ user, search, type, unreadOnly = false
 
   // 1. Role-based scoping
   if (userRole !== 'Taskflow Admin') {
-    // Non-admins see notifications addressed to them personally, or broadcast
-    // to everyone ('All') or specifically to their role
-    filter.$or = [{ recipientId: userId }, { targetRole: { $in: ['All', userRole] } }];
+    // Notifications tied to a project (metadata.projectId) are only visible to users who
+    // belong to that project — either as a member or as its lead.
+    const memberProjectIds = await Project.find({
+      isDeleted: { $ne: true },
+      $or: [{ members: userId }, { leadId: userId }],
+    }).distinct('_id');
+
+    // Non-admins see: notifications addressed to them personally; broadcasts ('All' or
+    // their role) that aren't tied to any project; or project-scoped broadcasts for a
+    // project they actually belong to.
+    filter.$or = [
+      { recipientId: userId },
+      { targetRole: { $in: ['All', userRole] }, 'metadata.projectId': { $exists: false } },
+      { targetRole: { $in: ['All', userRole] }, 'metadata.projectId': { $in: memberProjectIds } },
+    ];
   }
   // Taskflow Admin sees the full global notification feed (no additional scoping)
 
@@ -62,12 +103,18 @@ export const getNotifications = catchAsync(async (req, res) => {
   const unreadOnly = req.query.unread === 'true' || req.query.unread === true;
   const skip = (page - 1) * limit;
 
-  const filter = buildNotificationFilter({
-    user: req.user,
-    search,
-    type,
-    unreadOnly,
-  });
+  const [filter, unreadFilter] = await Promise.all([
+    buildNotificationFilter({
+      user: req.user,
+      search,
+      type,
+      unreadOnly,
+    }),
+    buildNotificationFilter({
+      user: req.user,
+      unreadOnly: true,
+    }),
+  ]);
 
   const userIdStr = (req.user._id || req.user.id).toString();
 
@@ -79,12 +126,7 @@ export const getNotifications = catchAsync(async (req, res) => {
       .limit(limit)
       .lean(),
     Notification.countDocuments(filter),
-    Notification.countDocuments(
-      buildNotificationFilter({
-        user: req.user,
-        unreadOnly: true,
-      })
-    ),
+    Notification.countDocuments(unreadFilter),
   ]);
 
   const sanitized = notifications.map((n) => {
@@ -107,6 +149,8 @@ export const getNotifications = catchAsync(async (req, res) => {
             role: n.actorId.role || '',
           }
         : null,
+      metadata: n.metadata || {},
+      link: buildNotificationLink(n.type, n.metadata),
       isRead,
       createdAt: n.createdAt,
     };
@@ -134,7 +178,7 @@ export const getNotifications = catchAsync(async (req, res) => {
  * Quick retrieval of unread notifications count for badge UI
  */
 export const getUnreadNotificationsCount = catchAsync(async (req, res) => {
-  const filter = buildNotificationFilter({
+  const filter = await buildNotificationFilter({
     user: req.user,
     unreadOnly: true,
   });
@@ -194,7 +238,7 @@ export const markNotificationAsRead = catchAsync(async (req, res) => {
 export const markAllNotificationsAsRead = catchAsync(async (req, res) => {
   const userId = req.user._id || req.user.id;
 
-  const filter = buildNotificationFilter({
+  const filter = await buildNotificationFilter({
     user: req.user,
     unreadOnly: true,
   });
