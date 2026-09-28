@@ -68,6 +68,8 @@ const DEMO_ACCOUNTS = [
   },
 ];
 
+const cleanLog = (val) => String(val ?? '').replace(/[\r\n]/g, '');
+
 async function ensureUser(userData) {
   let user = await GetAllUsers.findOne({ email: userData.email });
   if (!user) {
@@ -80,7 +82,7 @@ async function ensureUser(userData) {
       isActive: true,
       isDeleted: false,
     });
-    console.log(`Created user ${userData.email} (${userData.role}) [ID: ${user.userId}]`);
+    console.log(`Created user ${cleanLog(userData.email)} (${cleanLog(userData.role)}) [ID: ${cleanLog(user.userId)}]`);
   } else {
     let modified = false;
     if (userData.password && userData.email !== 'vijayaraghavan130699@gmail.com') {
@@ -101,7 +103,7 @@ async function ensureUser(userData) {
     }
     if (modified) {
       await user.save();
-      console.log(`Updated user ${userData.email} (${userData.role})`);
+      console.log(`Updated user ${cleanLog(userData.email)} (${cleanLog(userData.role)})`);
     }
   }
   return user;
@@ -122,7 +124,7 @@ async function ensureProject({ name, key, description, leadId, memberIds, create
       status: 'active',
       isDeleted: false,
     });
-    console.log(`Created project ${project.name} (${project.key})`);
+    console.log(`Created project ${cleanLog(project.name)} (${cleanLog(project.key)})`);
   } else {
     project.leadId = leadId || project.leadId;
     project.createdBy = createdBy || project.createdBy;
@@ -132,7 +134,7 @@ async function ensureProject({ name, key, description, leadId, memberIds, create
     project.status = 'active';
     project.isDeleted = false;
     await project.save();
-    console.log(`Updated project ${project.name} (${project.key}) with assigned members.`);
+    console.log(`Updated project ${cleanLog(project.name)} (${cleanLog(project.key)}) with assigned members.`);
   }
   return project;
 }
@@ -157,7 +159,7 @@ async function ensureTask(project, order, taskData) {
       order,
       isDeleted: false,
     });
-    console.log(`  Created task ${task.taskKey}: ${task.title} [${task.status}]`);
+    console.log(`  Created task ${cleanLog(task.taskKey)}: ${cleanLog(task.title)} [${cleanLog(task.status)}]`);
   }
   return task;
 }
