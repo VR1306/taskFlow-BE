@@ -7,11 +7,37 @@ import Comment from '../models/comments/comments.model.js';
 import { seedSuperAdmin } from '../helpers/seedAdmin.js';
 import { seedDefaultRoles } from '../helpers/seedRoles.js';
 
-// Additional demo accounts layered on top of whichever Taskflow Admin / Project
-// Manager / Developer accounts already exist in this database.
-const EXTRA_USERS = [
+// Demo credentials in exact seed order requested:
+// 1. Taskflow Admin
+// 2. Project Manager
+// 3. QA
+// 4. Developer
+const DEMO_ACCOUNTS = [
+  // ── 1. Taskflow Admin ─────────────────────────────────────────────────────
   {
-    userId: 'TF0004',
+    firstName: 'Admin',
+    lastName: 'User',
+    email: 'admin@taskflow.com',
+    password: 'TestUser@123',
+    role: 'Taskflow Admin',
+  },
+  // ── 2. Project Manager ───────────────────────────────────────────────────
+  {
+    firstName: 'Sofia',
+    lastName: 'Alvarez',
+    email: 'sofia.pm@taskflow.com',
+    password: 'TestUser@123',
+    role: 'Project Manager',
+  },
+  {
+    firstName: 'Project',
+    lastName: 'Manager',
+    email: 'pm@taskflow.com',
+    password: 'TestUser@123',
+    role: 'Project Manager',
+  },
+  // ── 3. QA ────────────────────────────────────────────────────────────────
+  {
     firstName: 'Priya',
     lastName: 'Nair',
     email: 'priya.qa@taskflow.com',
@@ -19,7 +45,14 @@ const EXTRA_USERS = [
     role: 'QA',
   },
   {
-    userId: 'TF0005',
+    firstName: 'Quality',
+    lastName: 'Assurance',
+    email: 'qa@taskflow.com',
+    password: 'TestUser@123',
+    role: 'QA',
+  },
+  // ── 4. Developer ─────────────────────────────────────────────────────────
+  {
     firstName: 'Marcus',
     lastName: 'Chen',
     email: 'marcus.dev@taskflow.com',
@@ -27,37 +60,79 @@ const EXTRA_USERS = [
     role: 'Developer',
   },
   {
-    userId: 'TF0006',
-    firstName: 'Sofia',
-    lastName: 'Alvarez',
-    email: 'sofia.pm@taskflow.com',
+    firstName: 'Lead',
+    lastName: 'Developer',
+    email: 'dev@taskflow.com',
     password: 'TestUser@123',
-    role: 'Project Manager',
+    role: 'Developer',
   },
 ];
 
 async function ensureUser(userData) {
   let user = await GetAllUsers.findOne({ email: userData.email });
   if (!user) {
-    user = await GetAllUsers.create({ ...userData, isActive: true, isDeleted: false });
-    console.log(`Created user ${userData.email} (${userData.role})`);
+    user = await GetAllUsers.create({
+      firstName: userData.firstName,
+      lastName: userData.lastName,
+      email: userData.email,
+      password: userData.password,
+      role: userData.role,
+      isActive: true,
+      isDeleted: false,
+    });
+    console.log(`Created user ${userData.email} (${userData.role}) [ID: ${user.userId}]`);
+  } else {
+    let modified = false;
+    if (userData.password && userData.email !== 'vijayaraghavan130699@gmail.com') {
+      const isMatch = await user.comparePassword(userData.password);
+      if (!isMatch) {
+        user.password = userData.password;
+        modified = true;
+      }
+    }
+    if (user.role !== userData.role) {
+      user.role = userData.role;
+      modified = true;
+    }
+    if (user.isActive !== true || user.isDeleted !== false) {
+      user.isActive = true;
+      user.isDeleted = false;
+      modified = true;
+    }
+    if (modified) {
+      await user.save();
+      console.log(`Updated user ${userData.email} (${userData.role})`);
+    }
   }
   return user;
 }
 
-async function ensureProject({ name, key, description, leadId, memberIds }) {
+async function ensureProject({ name, key, description, leadId, memberIds, createdBy }) {
   let project = await Project.findOne({ name });
+  const uniqueMembers = Array.from(new Set(memberIds.filter(Boolean).map(String)));
+
   if (!project) {
     project = await Project.create({
       name,
       key,
       description,
       leadId,
-      members: memberIds,
+      createdBy,
+      members: uniqueMembers,
       status: 'active',
       isDeleted: false,
     });
     console.log(`Created project ${project.name} (${project.key})`);
+  } else {
+    project.leadId = leadId || project.leadId;
+    project.createdBy = createdBy || project.createdBy;
+    project.members = Array.from(
+      new Set([...(project.members || []).map(String), ...uniqueMembers])
+    );
+    project.status = 'active';
+    project.isDeleted = false;
+    await project.save();
+    console.log(`Updated project ${project.name} (${project.key}) with assigned members.`);
   }
   return project;
 }
@@ -65,7 +140,7 @@ async function ensureProject({ name, key, description, leadId, memberIds }) {
 async function ensureTask(project, order, taskData) {
   let task = await Task.findOne({ projectId: project._id, title: taskData.title });
   if (!task) {
-    project.taskSequence += 1;
+    project.taskSequence = (project.taskSequence || 0) + 1;
     await project.save();
     task = await Task.create({
       taskKey: `${project.key}-${project.taskSequence}`,
@@ -99,121 +174,240 @@ const daysFromNow = (days) => new Date(Date.now() + days * 24 * 60 * 60 * 1000);
 async function run() {
   await mongoose.connect(process.env.MONGO_DB_URL, { dbName: 'taskflow' });
 
-  // Ensure the base accounts and default roles exist first
+  // 1. Ensure default permissions & roles exist
   await seedSuperAdmin();
   await seedDefaultRoles();
-  for (const userData of EXTRA_USERS) {
-    await ensureUser(userData);
+
+  // 2. Ensure all demo accounts exist with active status
+  const seededUsers = {};
+  for (const account of DEMO_ACCOUNTS) {
+    const user = await ensureUser(account);
+    seededUsers[account.email] = user;
   }
 
-  // Resolved by actual role rather than assumed seed emails, since this database
-  // already had real pre-existing accounts under different emails than the
-  // original SEED_USERS placeholders (e.g. no "admin@taskflow.com" ever existed here).
-  const admin = await GetAllUsers.findOne({ role: 'Taskflow Admin', isDeleted: { $ne: true } });
-  const [pm1, pm2] = await GetAllUsers.find({
-    role: 'Project Manager',
+  // Also resolve primary admin if present
+  const primaryAdmin = await GetAllUsers.findOne({
+    email: 'vijayaraghavan130699@gmail.com',
     isDeleted: { $ne: true },
-  }).sort({ createdAt: 1 });
-  const [dev1, dev2] = await GetAllUsers.find({
-    role: 'Developer',
-    isDeleted: { $ne: true },
-  }).sort({ createdAt: 1 });
-  const qa1 = await GetAllUsers.findOne({ role: 'QA', isDeleted: { $ne: true } });
+  });
 
-  if (!admin || !pm1 || !dev1 || !qa1) {
-    throw new Error(
-      'Missing a required seed account (Taskflow Admin / Project Manager / Developer / QA). Run this script again after seedSuperAdmin/seedDefaultRoles have completed.'
+  const admin = seededUsers['admin@taskflow.com'] || primaryAdmin;
+  const pmSofia = seededUsers['sofia.pm@taskflow.com'];
+  const pmAlias = seededUsers['pm@taskflow.com'];
+  const qaPriya = seededUsers['priya.qa@taskflow.com'];
+  const qaAlias = seededUsers['qa@taskflow.com'];
+  const devMarcus = seededUsers['marcus.dev@taskflow.com'];
+  const devAlias = seededUsers['dev@taskflow.com'];
+
+  const allResourceIds = [
+    admin?._id,
+    primaryAdmin?._id,
+    pmSofia?._id,
+    pmAlias?._id,
+    qaPriya?._id,
+    qaAlias?._id,
+    devMarcus?._id,
+    devAlias?._id,
+  ].filter(Boolean);
+
+  // ── Showcase Project: TaskFlow Showcase Workspace ────────────────────────
+  const showcaseProject = await ensureProject({
+    name: 'TaskFlow Showcase Workspace',
+    key: 'TF03',
+    description:
+      'Live demonstration workspace showcasing cross-functional agile workflows, sprint boards, and RBAC permissions across Admin, PM, QA, and Developer roles.',
+    leadId: pmSofia._id,
+    createdBy: admin._id,
+    memberIds: allResourceIds,
+  });
+
+  const showcaseTasks = [
+    // ── Planned Backlog Column (Unstarted) ──────────────────────────────────
+    {
+      title: 'Automated End-to-End Test Suite for Mobile & Desktop',
+      description:
+        'Implement Playwright regression tests covering tab transitions, drawer opening, and task creation across viewports.',
+      type: 'Task',
+      status: 'Todo',
+      priority: 'High',
+      assigneeId: qaPriya._id,
+      labels: ['testing', 'automation'],
+      dueDate: daysFromNow(4),
+    },
+    {
+      title: 'Stripe Webhook Integration for Subscription Billing',
+      description:
+        'Handle checkout.session.completed and customer.subscription.updated events to provision workspace tiers.',
+      type: 'Story',
+      status: 'Todo',
+      priority: 'Medium',
+      assigneeId: devMarcus._id,
+      labels: ['billing', 'backend'],
+      dueDate: daysFromNow(7),
+    },
+    {
+      title: 'Security Audit: Role Permission Escalation Matrix',
+      description:
+        'Verify that QA and Developer roles cannot perform unauthorized user deletion or project management actions.',
+      type: 'Task',
+      status: 'Todo',
+      priority: 'Urgent',
+      assigneeId: pmSofia._id,
+      labels: ['security', 'compliance'],
+      dueDate: daysFromNow(2),
+    },
+    // ── In Progress ────────────────────────────────────────────────────────
+    {
+      title: 'Smooth Tab Slide Transitions & Touch Gestures',
+      description:
+        'Implement bidirectional sliding animations and touch swipe support for project navigation tabs.',
+      type: 'Story',
+      status: 'In Progress',
+      priority: 'High',
+      assigneeId: devMarcus._id,
+      labels: ['frontend', 'ui/ux'],
+      dueDate: daysFromNow(1),
+    },
+    {
+      title: 'Cross-Browser Regression Testing on 320px Viewports',
+      description:
+        'Validate layout boundaries and ensure zero horizontal overflow on small mobile displays.',
+      type: 'Task',
+      status: 'In Progress',
+      priority: 'Medium',
+      assigneeId: qaPriya._id,
+      labels: ['qa', 'responsive'],
+      dueDate: daysFromNow(2),
+    },
+    // ── In Review ──────────────────────────────────────────────────────────
+    {
+      title: 'Real-Time Notification Bell & WebSocket Dispatcher',
+      description:
+        'Broadcast task assignments, project mentions, and status updates via instant toast and drawer notifications.',
+      type: 'Story',
+      status: 'In Review',
+      priority: 'High',
+      assigneeId: devMarcus._id,
+      labels: ['realtime', 'frontend'],
+      dueDate: daysFromNow(1),
+    },
+    {
+      title: 'Session Token Refresh Race Condition Fix',
+      description:
+        'Synchronize token refreshing across concurrent API calls to prevent intermittent 401 unauthorized errors.',
+      type: 'Bug',
+      status: 'In Review',
+      priority: 'Urgent',
+      assigneeId: qaPriya._id,
+      labels: ['auth', 'security'],
+      dueDate: daysFromNow(1),
+    },
+    // ── Done ───────────────────────────────────────────────────────────────
+    {
+      title: 'Implement Granular RBAC Permissions Architecture',
+      description:
+        'Designed system permission catalogue with module-level capabilities and hierarchical role inheritance.',
+      type: 'Task',
+      status: 'Done',
+      priority: 'High',
+      assigneeId: pmSofia._id,
+      labels: ['architecture', 'rbac'],
+    },
+    {
+      title: 'Interactive Kanban Board Drag-and-Drop Workflow',
+      description:
+        'Built dynamic Kanban columns with HTML5 drag-and-drop, state preservation, and quick task preview drawers.',
+      type: 'Story',
+      status: 'Done',
+      priority: 'High',
+      assigneeId: devMarcus._id,
+      labels: ['kanban', 'frontend'],
+    },
+    {
+      title: 'Responsive Drawer Navigation for Small Mobile Devices',
+      description:
+        'Refactored project filter, task detail, and create drawers with full responsive viewport adaptation.',
+      type: 'Bug',
+      status: 'Done',
+      priority: 'Medium',
+      assigneeId: qaPriya._id,
+      labels: ['bug', 'mobile'],
+    },
+  ];
+
+  let order = 0;
+  for (const taskData of showcaseTasks) {
+    await ensureTask(showcaseProject, order, taskData);
+    order += 1;
+  }
+
+  // Sample collaboration comments on the In Progress & In Review tasks
+  const tabSlideTask = await Task.findOne({
+    projectId: showcaseProject._id,
+    title: 'Smooth Tab Slide Transitions & Touch Gestures',
+  });
+  if (tabSlideTask) {
+    await ensureComment(
+      tabSlideTask,
+      devMarcus._id,
+      'Implemented CSS hardware-accelerated transforms for directional tab sliding. Testing smoothly across Safari and Chrome.'
+    );
+    await ensureComment(
+      tabSlideTask,
+      qaPriya._id,
+      'Verified on 320px viewport emulation: slide animations are fluid and touch targets remain fully accessible!'
     );
   }
 
-  // Fall back to the first account of that role if a second one isn't available
-  const secondPm = pm2 || pm1;
-  const secondDev = dev2 || dev1;
+  const notificationTask = await Task.findOne({
+    projectId: showcaseProject._id,
+    title: 'Real-Time Notification Bell & WebSocket Dispatcher',
+  });
+  if (notificationTask) {
+    await ensureComment(
+      notificationTask,
+      pmSofia._id,
+      'Great work on notifications! Please confirm unread badges increment dynamically when a task is reassigned.'
+    );
+    await ensureComment(
+      notificationTask,
+      devMarcus._id,
+      'Confirmed: unread count badges increment in real time with audio alert toggle in settings.'
+    );
+  }
 
-  // ── Project 1: Engineering Platform ──────────────────────────────────────
-  const eng = await ensureProject({
+  // Also ensure existing demo projects have createdBy & members populated
+  await ensureProject({
     name: 'Engineering Platform',
     key: 'ENG',
     description: 'Core backend services and API platform for TaskFlow.',
-    leadId: pm1._id,
-    memberIds: [admin._id, pm1._id, dev1._id, secondDev._id, qa1._id],
+    leadId: pmSofia._id,
+    createdBy: admin._id,
+    memberIds: allResourceIds,
   });
 
-  const engTasks = [
-    { title: 'Set up CI/CD pipeline', type: 'Task', status: 'Done', priority: 'High', assigneeId: dev1._id, labels: ['infra'] },
-    { title: 'Design database schema for billing', type: 'Story', status: 'Done', priority: 'Medium', assigneeId: secondDev._id, labels: ['backend'] },
-    { title: 'Fix memory leak in worker process', type: 'Bug', status: 'In Review', priority: 'Urgent', assigneeId: dev1._id, labels: ['bug', 'production'], dueDate: daysFromNow(1) },
-    { title: 'Implement rate limiting middleware', type: 'Task', status: 'In Progress', priority: 'High', assigneeId: secondDev._id, labels: ['backend'] },
-    { title: 'Write integration tests for auth flow', type: 'Task', status: 'In Progress', priority: 'Medium', assigneeId: qa1._id, labels: ['testing'] },
-    { title: 'Investigate flaky test suite', type: 'Bug', status: 'Todo', priority: 'Medium', assigneeId: qa1._id, labels: ['testing'], dueDate: daysFromNow(5) },
-    { title: 'Add pagination to search endpoint', type: 'Task', status: 'Todo', priority: 'Low', assigneeId: null, labels: [] },
-    { title: 'Upgrade Node.js runtime to v22', type: 'Task', status: 'Todo', priority: 'Low', assigneeId: dev1._id, labels: ['infra'], dueDate: daysFromNow(-2) },
-  ];
-
-  // ── Project 2: Mobile App Revamp ─────────────────────────────────────────
-  const mob = await ensureProject({
-    name: 'Mobile App Revamp',
-    key: 'MOB',
-    description: 'Redesign and rebuild the TaskFlow mobile experience.',
-    leadId: secondPm._id,
-    memberIds: [secondPm._id, secondDev._id, qa1._id, admin._id],
-  });
-
-  const mobTasks = [
-    { title: 'Wireframe onboarding flow', type: 'Story', status: 'Done', priority: 'High', assigneeId: secondPm._id, labels: ['design'] },
-    { title: 'Build push notification service', type: 'Task', status: 'In Progress', priority: 'High', assigneeId: secondDev._id, labels: ['mobile'] },
-    { title: 'Crash on iOS 18 launch screen', type: 'Bug', status: 'In Review', priority: 'Urgent', assigneeId: secondDev._id, labels: ['bug', 'ios'], dueDate: daysFromNow(2) },
-    { title: 'QA pass on Android release candidate', type: 'Task', status: 'Todo', priority: 'Medium', assigneeId: qa1._id, labels: ['testing', 'android'] },
-    { title: 'Add dark mode support', type: 'Story', status: 'Todo', priority: 'Low', assigneeId: null, labels: ['design'] },
-  ];
-
-  // ── Project 3: Marketing Website ─────────────────────────────────────────
-  const web = await ensureProject({
-    name: 'Marketing Website',
-    key: 'WEB',
-    description: 'Public-facing marketing site and landing pages.',
-    leadId: admin._id,
-    memberIds: [admin._id, pm1._id, dev1._id],
-  });
-
-  const webTasks = [
-    { title: 'Launch new pricing page', type: 'Story', status: 'Done', priority: 'Medium', assigneeId: dev1._id, labels: ['web'] },
-    { title: 'Fix broken links in footer', type: 'Bug', status: 'Done', priority: 'Low', assigneeId: dev1._id, labels: ['bug'] },
-    { title: 'SEO audit for blog section', type: 'Task', status: 'In Progress', priority: 'Medium', assigneeId: pm1._id, labels: ['seo'] },
-    { title: 'A/B test signup CTA', type: 'Task', status: 'Todo', priority: 'High', assigneeId: null, labels: ['growth'], dueDate: daysFromNow(7) },
-  ];
-
-  for (const [project, tasks] of [
-    [eng, engTasks],
-    [mob, mobTasks],
-    [web, webTasks],
-  ]) {
-    let order = 0;
-    for (const taskData of tasks) {
-      await ensureTask(project, order, taskData);
-      order += 1;
-    }
+  console.log('\n=============================================================');
+  console.log('🎉 TASKFLOW TEST CREDENTIALS & SHOWCASE PROJECT READY!');
+  console.log('=============================================================');
+  console.log('Project: TaskFlow Showcase Workspace (Key: TF03)');
+  console.log('Assigned Resources: Taskflow Admin, Project Manager, QA, Developer\n');
+  console.log('Credentials by Seed Order:\n');
+  console.log('1. Taskflow Admin');
+  console.log('   Email:    admin@taskflow.com');
+  console.log('   Password: TestUser@123');
+  if (primaryAdmin) {
+    console.log(`   (Primary Admin: ${primaryAdmin.email} / Vij@y13061999!)`);
   }
-
-  // A couple of comments to demo the Comments tab out of the box
-  const sampleTask = await Task.findOne({ projectId: eng._id, title: 'Fix memory leak in worker process' });
-  if (sampleTask) {
-    await ensureComment(
-      sampleTask,
-      dev1._id,
-      "Reproduced locally — looks like the connection pool isn't releasing sockets under load."
-    );
-    await ensureComment(sampleTask, qa1._id, 'Confirmed on staging too. This is blocking the next release.');
-  }
-
-  console.log('\nTest data seeding completed.');
-  console.log('Accounts used for this data (existing passwords unchanged for pre-existing accounts):');
-  console.log(`  Taskflow Admin   ${admin.email}`);
-  console.log(`  Project Manager  ${pm1.email}`);
-  console.log(`  Developer        ${dev1.email}`);
-  console.log(`  QA               ${qa1.email} / TestUser@123`);
-  if (secondDev !== dev1) console.log(`  Developer        ${secondDev.email} / TestUser@123`);
-  if (secondPm !== pm1) console.log(`  Project Manager  ${secondPm.email} / TestUser@123`);
+  console.log('\n2. Project Manager');
+  console.log('   Email:    pm@taskflow.com (or sofia.pm@taskflow.com)');
+  console.log('   Password: TestUser@123');
+  console.log('\n3. QA');
+  console.log('   Email:    qa@taskflow.com (or priya.qa@taskflow.com)');
+  console.log('   Password: TestUser@123');
+  console.log('\n4. Developer');
+  console.log('   Email:    dev@taskflow.com (or marcus.dev@taskflow.com)');
+  console.log('   Password: TestUser@123');
+  console.log('=============================================================\n');
 }
 
 try {
